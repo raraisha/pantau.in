@@ -3,16 +3,18 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
+import { Menu, X } from 'lucide-react'
 
 type User = {
   name: string
   role: 'masyarakat' | 'petugas' | 'admin'
-  avatar?: string // foto profil dari db
+  avatar?: string
 } | null
 
 export default function Navbar() {
   const [user, setUser] = useState<User>(null)
   const [open, setOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   const pathname = usePathname()
 
   useEffect(() => {
@@ -34,7 +36,6 @@ export default function Navbar() {
 
   const isHomePage = pathname === '/'
 
-  // helper untuk ambil inisial
   const getInitial = (name?: string) =>
     name ? name.charAt(0).toUpperCase() : 'U'
 
@@ -45,8 +46,19 @@ export default function Navbar() {
         <img src="/logo.png" alt="Logo" className="h-10" />
       </div>
 
+      {/* Burger button (mobile) */}
+      <div className="md:hidden">
+        <button onClick={() => setMenuOpen(!menuOpen)}>
+          {menuOpen ? <X size={28} /> : <Menu size={28} />}
+        </button>
+      </div>
+
       {/* Navigation */}
-      <div className="flex items-center space-x-6 text-blue-900 font-semibold">
+      <div
+        className={`flex-col md:flex md:flex-row md:items-center md:space-x-6 text-blue-900 font-semibold absolute md:static top-16 left-0 w-full md:w-auto bg-yellow-400 md:bg-transparent transition-all duration-300 ${
+          menuOpen ? 'flex' : 'hidden'
+        }`}
+      >
         {user ? (
           <>
             {/* Link navigasi sesuai role */}
@@ -78,7 +90,7 @@ export default function Navbar() {
             {/* Notifikasi */}
             <button className="text-xl">🔔</button>
 
-            {/* Avatar + Dropdown (Logout only) */}
+            {/* Avatar + Dropdown */}
             <div className="relative">
               <button
                 onClick={() => setOpen(!open)}

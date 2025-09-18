@@ -6,7 +6,7 @@ import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import Navbar from '@/components/Navbar'
 import { Eye, EyeOff } from 'lucide-react'
-import HCaptcha from '@hcaptcha/react-hcaptcha'  // ⬅️ pasang lib hCaptcha
+import HCaptcha from '@hcaptcha/react-hcaptcha'
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -20,7 +20,7 @@ export default function RegisterPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
-  const [captchaToken, setCaptchaToken] = useState<string | null>(null) // simpan token captcha
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null)
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value })
@@ -32,18 +32,16 @@ export default function RegisterPage() {
     setError('')
 
     if (!captchaToken) {
-      setError('Silakan selesaikan captcha dulu')
+      setError('Silakan selesaikan captcha dulu.')
       setLoading(false)
       return
     }
 
-    // 1. Daftar akun di Supabase Auth dengan captcha token
+    // 1. Daftar akun di Supabase Auth
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email: form.email,
       password: form.password,
-      options: {
-        captchaToken, // ⬅️ kirim token ke Supabase
-      },
+      options: { captchaToken },
     })
 
     if (signUpError) {
@@ -52,7 +50,7 @@ export default function RegisterPage() {
       return
     }
 
-    // 2. Simpan data user ke table 'users'
+    // 2. Simpan data user ke tabel `users`
     const { error: insertError } = await supabase.from('users').insert([
       {
         id: signUpData.user?.id,
@@ -75,51 +73,60 @@ export default function RegisterPage() {
   return (
     <>
       <Navbar />
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-r from-white to-orange-100 px-6 py-10">
-        <div className="max-w-6xl w-full grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
-          {/* KIRI - Gambar */}
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#FFF7E9] via-[#FFFDF7] to-[#FDF7EE] px-6 py-10">
+        <div className="max-w-6xl w-full grid grid-cols-1 md:grid-cols-2 gap-10 items-center">
+          {/* LEFT IMAGE */}
           <div className="hidden md:flex justify-center">
             <Image
               src="/register-illustration.svg"
               alt="Ilustrasi Registrasi"
-              width={350}
-              height={350}
+              width={380}
+              height={380}
               priority
+              className="object-contain drop-shadow-md"
             />
           </div>
 
-          {/* KANAN - Form */}
-          <div className="bg-white shadow-xl rounded-2xl p-8 w-full">
-            <h2 className="text-3xl font-bold text-purple-800 mb-2">Daftar Akun Baru</h2>
-            <p className="text-sm mb-4 text-[#3E1C96]">
+          {/* RIGHT FORM */}
+          <div className="bg-white shadow-lg rounded-2xl p-8 md:p-10 w-full border border-gray-100">
+            <h2 className="text-3xl md:text-4xl font-bold text-[#3E1C96] mb-2">
+              Daftar Akun Baru
+            </h2>
+            <p className="text-sm mb-5 text-gray-600">
               Sudah punya akun?{' '}
-              <a href="/login" className="text-red-500 font-medium">
+              <a href="/login" className="text-red-500 font-semibold hover:underline">
                 Login disini
               </a>
             </p>
 
-            {error && <p className="text-red-500 mb-3 text-sm">{error}</p>}
+            {error && (
+              <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-md mb-4 text-sm">
+                {error}
+              </div>
+            )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {['NIK', 'nama', 'email', 'telp'].map((field) => (
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {['nik', 'nama', 'email', 'telp'].map((field) => (
                 <div key={field}>
-                  <label className="block text-sm font-semibold text-gray-800 mb-1">
-                    {field === 'telp' ? 'No. Telp' : field.charAt(0).toUpperCase() + field.slice(1)}
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    {field === 'telp'
+                      ? 'No. Telp'
+                      : field.charAt(0).toUpperCase() + field.slice(1)}
                   </label>
                   <input
-                    type="text"
+                    type={field === 'email' ? 'email' : 'text'}
                     name={field}
                     value={form[field as keyof typeof form]}
                     onChange={handleChange}
-                    className="w-full p-3 rounded-md border text-black"
+                    className="w-full p-3 rounded-md border border-gray-300 focus:ring-2 focus:ring-[#3E1C96] focus:outline-none transition text-black"
                     required={field !== 'telp'}
                   />
                 </div>
               ))}
 
-              {/* Password */}
+              {/* PASSWORD */}
               <div>
-                <label className="block text-sm font-semibold text-gray-800 mb-1">
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
                   Password
                 </label>
                 <div className="relative">
@@ -128,29 +135,31 @@ export default function RegisterPage() {
                     name="password"
                     value={form.password}
                     onChange={handleChange}
-                    className="w-full p-3 rounded-md border text-black pr-10"
+                    className="w-full p-3 rounded-md border border-gray-300 focus:ring-2 focus:ring-[#3E1C96] focus:outline-none transition text-black pr-10"
                     required
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-3 flex items-center text-gray-500"
+                    className="absolute inset-y-0 right-3 flex items-center text-gray-500 hover:text-gray-700"
                   >
                     {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                   </button>
                 </div>
               </div>
 
-              {/* hCaptcha Widget */}
-              <HCaptcha
-                sitekey={process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY!}
-                onVerify={(token) => setCaptchaToken(token)}
-              />
+              {/* CAPTCHA */}
+              <div className="flex justify-center">
+                <HCaptcha
+                  sitekey={process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY!}
+                  onVerify={(token) => setCaptchaToken(token)}
+                />
+              </div>
 
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-3 rounded-md transition"
+                className="w-full bg-[#F04438] hover:bg-[#d43a2e] text-white font-semibold py-3 rounded-md shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Loading...' : 'Registrasi'}
               </button>
