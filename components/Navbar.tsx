@@ -81,7 +81,7 @@ export default function Navbar() {
             {user.role === 'admin' && (
               <>
                 <Link href="/admin/dashboard">Dashboard Admin</Link>
-                <Link href="/riwayat-tugas">Manajemen Laporan</Link>
+                <Link href="/admin/laporan">Manajemen Laporan</Link>
                 <Link href="/admin/manajemen-petugas">Manajemen Petugas</Link>
                 <Link href="/admin/manajemen-users">Manajemen Users</Link>
               </>

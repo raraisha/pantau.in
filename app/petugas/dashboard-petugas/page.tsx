@@ -6,7 +6,7 @@ import Footer from '@/components/Footer'
 import AOS from 'aos'
 import 'aos/dist/aos.css'
 import { supabase } from '@/lib/supabase'
-import { ClipboardList, Users, Clock, CheckCircle } from 'lucide-react'
+import { ClipboardList, Clock, CheckCircle } from 'lucide-react'
 
 type Laporan = {
   id: string
@@ -16,7 +16,7 @@ type Laporan = {
   user_id?: string
 }
 
-export default function DashboardAdmin() {
+export default function DashboardPetugas() {
   const [laporan, setLaporan] = useState<Laporan[]>([])
   const [statistik, setStatistik] = useState({
     total: 0,
@@ -27,24 +27,25 @@ export default function DashboardAdmin() {
 
   useEffect(() => {
     AOS.init({ duration: 800, once: true })
-    fetchLaporan()
+    fetchLaporanPetugas()
   }, [])
 
-  
-  const fetchLaporan = async () => {
+  const fetchLaporanPetugas = async () => {
+    // ambil user aktif (petugas) dari localStorage
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
+
     const { data, error } = await supabase
-  .from("laporan")
-  .select(`
-    id,
-    judul,
-    deskripsi,
-    status,
-    created_at,
-    users:petugas_id ( nama, email )
-  `)
+      .from('laporan')
+      .select(`
+        id,
+        judul,
+        status,
+        created_at
+      `)
+      .eq('petugas_id', user.id) // hanya laporan yang ditugaskan ke petugas ini
 
     if (error) {
-      console.error('Error fetching laporan:', error.message)
+      console.error('Error fetching laporan petugas:', error.message)
       return
     }
 
@@ -77,32 +78,26 @@ export default function DashboardAdmin() {
   return (
     <>
       <Navbar />
-      
       <div className="min-h-screen bg-[#FDF7EE] pt-24 px-6">
         {/* Welcome */}
         <div data-aos="fade-down">
-          <h1 className="text-3xl font-bold text-[#3E1C96] mb-2">📊 Dashboard Admin</h1>
+          <h1 className="text-3xl font-bold text-[#3E1C96] mb-2">🛠️ Dashboard Petugas</h1>
           <p className="text-gray-700 mb-8 text-lg">
-            Kelola laporan masyarakat secara cepat, transparan, dan terorganisir.
+            Lihat dan kelola laporan yang ditugaskan kepada kamu.
           </p>
         </div>
 
         {/* Statistik */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10" data-aos="fade-up">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10" data-aos="fade-up">
           <div className="bg-white p-6 rounded-2xl shadow flex flex-col items-center">
             <ClipboardList className="text-[#3E1C96]" size={30} />
             <h3 className="text-xl font-semibold mt-2 text-black">{statistik.total}</h3>
-            <p className="text-gray-600 text-sm">Total Laporan</p>
+            <p className="text-gray-600 text-sm">Total Tugas</p>
           </div>
           <div className="bg-white p-6 rounded-2xl shadow flex flex-col items-center">
             <Clock className="text-yellow-600" size={30} />
             <h3 className="text-xl font-semibold mt-2 text-black">{statistik.menunggu}</h3>
             <p className="text-gray-600 text-sm">Menunggu</p>
-          </div>
-          <div className="bg-white p-6 rounded-2xl shadow flex flex-col items-center">
-            <Users className="text-blue-600" size={30} />
-            <h3 className="text-xl font-semibold mt-2 text-black">{statistik.diproses}</h3>
-            <p className="text-gray-600 text-sm">Diproses</p>
           </div>
           <div className="bg-white p-6 rounded-2xl shadow flex flex-col items-center">
             <CheckCircle className="text-green-600" size={30} />
@@ -113,7 +108,7 @@ export default function DashboardAdmin() {
 
         {/* Daftar laporan */}
         <div className="bg-white p-6 rounded-2xl shadow-lg" data-aos="fade-up" data-aos-delay="200">
-          <h2 className="text-2xl font-bold text-[#3E1C96] mb-4">📂 Semua Laporan</h2>
+          <h2 className="text-2xl font-bold text-[#3E1C96] mb-4">📂 Laporan Ditugaskan</h2>
 
           {laporan.length > 0 ? (
             <table className="w-full border-collapse">
@@ -122,7 +117,6 @@ export default function DashboardAdmin() {
                   <th className="p-3">Judul</th>
                   <th className="p-3">Tanggal</th>
                   <th className="p-3">Status</th>
-                    <th className="p-3">Petugas</th>
                   <th className="p-3">Aksi</th>
                 </tr>
               </thead>
@@ -130,23 +124,24 @@ export default function DashboardAdmin() {
                 {laporan.map((item) => (
                   <tr key={item.id} className="hover:bg-gray-50 text-sm">
                     <td className="p-3 text-black">{item.judul}</td>
-                    <td className="p-3 text-black">{new Date(item.created_at).toLocaleDateString('id-ID')}</td>
-                    <td className="p-3 text-black">{item.judul}</td>
+                    <td className="p-3 text-black">
+                      {new Date(item.created_at).toLocaleDateString('id-ID')}
+                    </td>
                     <td className={`p-3 font-semibold ${statusColor(item.status)}`}>{item.status}</td>
                     <td className="p-3">
-                            <button
-          onClick={() => (window.location.href = `/admin/laporan`)}
-          className="px-3 py-1 rounded-lg bg-[#3E1C96] text-white text-xs hover:bg-[#2d1470] transition"
-        >
-          Kelola
-        </button>
+                      <button
+                        onClick={() => (window.location.href = `/petugas/laporan/${item.id}`)}
+                        className="px-3 py-1 rounded-lg bg-[#3E1C96] text-white text-xs hover:bg-[#2d1470] transition"
+                      >
+                        Kelola
+                      </button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           ) : (
-            <p className="text-gray-500">Belum ada laporan.</p>
+            <p className="text-gray-500">Belum ada laporan yang ditugaskan.</p>
           )}
         </div>
       </div>

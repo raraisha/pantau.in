@@ -7,6 +7,7 @@ import Navbar from '@/components/Navbar'
 import Image from 'next/image'
 import HCaptcha from '@hcaptcha/react-hcaptcha'
 import { Eye, EyeOff } from 'lucide-react'
+import { Console } from 'console'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -69,35 +70,16 @@ export default function LoginPage() {
         .eq('email', form.email)
         .maybeSingle()
 
+        console.log(adminData);
+        
+
       if (adminData) {
         localStorage.setItem('user', JSON.stringify({ name: adminData.nama, role: 'admin' }))
         router.push('/admin/dashboard')
         return
       }
 
-      const { data: petugasData } = await supabase
-        .from('petugas')
-        .select('nama')
-        .eq('email', form.email)
-        .maybeSingle()
-
-      if (petugasData) {
-        localStorage.setItem('user', JSON.stringify({ name: petugasData.nama, role: 'petugas' }))
-        router.push('/dashboard-petugas')
-        return
-      }
-
-      const { data: userData } = await supabase
-        .from('users')
-        .select('nama')
-        .eq('email', form.email)
-        .maybeSingle()
-
-      if (userData) {
-        localStorage.setItem('user', JSON.stringify({ name: userData.nama, role: 'masyarakat' }))
-        router.push('/masyarakat/dashboard')
-        return
-      }
+      
 
       setError('Akun tidak ditemukan.')
     } catch (err) {
