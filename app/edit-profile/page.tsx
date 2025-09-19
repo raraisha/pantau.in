@@ -14,24 +14,34 @@ export default function EditProfilePage() {
 
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState('')
+  const [table, setTable] = useState<'users' | 'admins' | 'petugas' | null>(null)
 
-  // Load profile awal
+  // load profile awal
   useEffect(() => {
     const loadProfile = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      // ambil profile dari tabel users
-      const { data, error } = await supabase
-        .from('users')
-        .select('nama, avatar')
-        .eq('id', user.id)
-        .single()
-
-      if (!error && data) {
-        setNama(data.nama || '')
-        if (data.avatar) setPreview(data.avatar)
+      // fungsi bantu buat cek ke tabel tertentu
+      const checkTable = async (tableName: 'users' | 'admins' | 'petugas') => {
+        const { data, error } = await supabase
+          .from(tableName)
+          .select('nama, avatar')
+          .eq('id', user.id)
+          .single()
+        if (!error && data) {
+          setNama(data.nama || '')
+          if (data.avatar) setPreview(data.avatar)
+          setTable(tableName)
+          return true
+        }
+        return false
       }
+
+      // cek urutan tables
+      await checkTable('users') ||
+      await checkTable('admins') ||
+      await checkTable('petugas')
     }
 
     loadProfile()
@@ -53,10 +63,11 @@ export default function EditProfilePage() {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('User tidak ditemukan')
+      if (!table) throw new Error('Data user tidak ditemukan di tabel manapun')
 
       let avatarUrl = preview
 
-      // Upload avatar ke Supabase Storage
+      // upload avatar
       if (avatar) {
         const fileExt = avatar.name.split('.').pop()
         const fileName = `${user.id}-${Date.now()}.${fileExt}`
@@ -73,15 +84,15 @@ export default function EditProfilePage() {
         avatarUrl = publicUrl.publicUrl
       }
 
-      // update nama + avatar di tabel users
+      // update nama + avatar di tabel yg sesuai
       const { error: updateError } = await supabase
-        .from('users')
-        .update({ nama, avatar: avatarUrl})
+        .from(table)
+        .update({ nama, avatar: avatarUrl })
         .eq('id', user.id)
 
       if (updateError) throw updateError
 
-      // update password kalau diisi
+      // update password kalo ada
       if (password) {
         const { error: pwError } = await supabase.auth.updateUser({ password })
         if (pwError) throw pwError

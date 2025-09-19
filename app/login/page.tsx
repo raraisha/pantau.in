@@ -69,13 +69,41 @@ export default function LoginPage() {
         .select('nama')
         .eq('email', form.email)
         .maybeSingle()
-
-        console.log(adminData);
         
 
       if (adminData) {
         localStorage.setItem('user', JSON.stringify({ name: adminData.nama, role: 'admin' }))
         router.push('/admin/dashboard')
+        return
+      }
+
+      const { data: petugasData } = await supabase
+        .from('petugas')
+        .select('nama')
+        .eq('email', form.email)
+        .maybeSingle()
+
+
+        console.log(petugasData)
+        
+
+      if (petugasData) {
+        localStorage.setItem('user', JSON.stringify({ name: petugasData.nama, role: 'petugas' }))
+        router.push('/petugas/dashboard-petugas')
+        return
+      }
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('nama')
+        .eq('email', form.email)
+        .maybeSingle()
+        
+        console.log(userData)
+
+      if (userData) {
+        localStorage.setItem('user', JSON.stringify({ name: userData.nama, role: 'masyarakat' }))
+        router.push('/masyarakat/dashboard')
         return
       }
 

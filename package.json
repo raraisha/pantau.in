@@ -12,6 +12,7 @@
   "dependencies": {
     "@hcaptcha/react-hcaptcha": "^1.12.1",
     "@prisma/client": "^6.13.0",
+    "@shadcn/ui": "^0.0.4",
     "@supabase/supabase-js": "^2.55.0",
     "aos": "^2.3.4",
     "bcryptjs": "^3.0.2",

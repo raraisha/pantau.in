@@ -73,8 +73,9 @@ export default function Navbar() {
 
             {user.role === 'petugas' && (
               <>
-                <Link href="/dashboard-petugas">Dashboard Petugas</Link>
-                <Link href="/riwayat-tugas">Riwayat Tugas</Link>
+                <Link href="/petugas/dashboard-petugas">Dashboard Petugas</Link>
+                <Link href="/petugas/tugas">Tugas Saya</Link>
+                <Link href="/petugas/riwayat-tugas">Riwayat Tugas</Link>
               </>
             )}
 
