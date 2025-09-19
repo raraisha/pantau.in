@@ -46,9 +46,12 @@ export default function Navbar() {
         <img src="/logo.png" alt="Logo" className="h-10" />
       </div>
 
-      {/* Burger button (mobile) */}
+      {/* Burger button (mobile only) */}
       <div className="md:hidden">
-        <button onClick={() => setMenuOpen(!menuOpen)}>
+        <button
+          onClick={() => setMenuOpen(!menuOpen)}
+          className="p-2 rounded-md hover:bg-yellow-300 transition"
+        >
           {menuOpen ? <X size={28} /> : <Menu size={28} />}
         </button>
       </div>
@@ -62,86 +65,88 @@ export default function Navbar() {
         {user ? (
           <>
             {/* Link navigasi sesuai role */}
-            {user.role === 'masyarakat' && (
-              <>
-                <Link href="/">Beranda</Link>
-                <Link href="/masyarakat/dashboard">Dashboard</Link>
-                <Link href="/masyarakat/buat-laporan">Buat Laporan</Link>
-                <Link href="/masyarakat/riwayat">Riwayat Laporan</Link>
-              </>
-            )}
+            <div className="flex flex-col md:flex-row md:items-center md:space-x-6 space-y-3 md:space-y-0 px-6 md:px-0 py-4 md:py-0">
+              {user.role === 'masyarakat' && (
+                <>
+                  <Link href="/">Beranda</Link>
+                  <Link href="/masyarakat/dashboard">Dashboard</Link>
+                  <Link href="/masyarakat/buat-laporan">Buat Laporan</Link>
+                  <Link href="/masyarakat/riwayat">Riwayat Laporan</Link>
+                </>
+              )}
 
-            {user.role === 'petugas' && (
-              <>
-                <Link href="/petugas/dashboard-petugas">Dashboard Petugas</Link>
-                <Link href="/petugas/tugas">Tugas Saya</Link>
-                <Link href="/petugas/riwayat-tugas">Riwayat Tugas</Link>
-              </>
-            )}
+              {user.role === 'petugas' && (
+                <>
+                  <Link href="/petugas/dashboard-petugas">Dashboard Petugas</Link>
+                  <Link href="/petugas/tugas">Tugas Saya</Link>
+                  <Link href="/petugas/riwayat-tugas">Riwayat Tugas</Link>
+                </>
+              )}
 
-            {user.role === 'admin' && (
-              <>
-                <Link href="/admin/dashboard">Dashboard Admin</Link>
-                <Link href="/admin/laporan">Manajemen Laporan</Link>
-                <Link href="/admin/manajemen-petugas">Manajemen Petugas</Link>
-                <Link href="/admin/manajemen-users">Manajemen Users</Link>
-              </>
-            )}
+              {user.role === 'admin' && (
+                <>
+                  <Link href="/admin/dashboard">Dashboard Admin</Link>
+                  <Link href="/admin/laporan">Manajemen Laporan</Link>
+                  <Link href="/admin/manajemen-petugas">Manajemen Petugas</Link>
+                  <Link href="/admin/manajemen-users">Manajemen Users</Link>
+                </>
+              )}
+            </div>
 
-            {/* Notifikasi */}
-            <button className="text-xl">🔔</button>
+            {/* Notifikasi + Avatar */}
+            <div className="flex items-center gap-4 px-6 md:px-0 pb-4 md:pb-0">
+              <button className="text-xl hover:scale-110 transition">🔔</button>
+              <div className="relative">
+                <button
+                  onClick={() => setOpen(!open)}
+                  className="w-10 h-10 rounded-full overflow-hidden border-2 border-white shadow"
+                >
+                  {user?.avatar ? (
+                    <img
+                      src={user.avatar}
+                      alt="User Avatar"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-blue-600 text-white">
+                      {getInitial(user?.name)}
+                    </div>
+                  )}
+                </button>
 
-            {/* Avatar + Dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setOpen(!open)}
-                className="w-10 h-10 rounded-full overflow-hidden border-2 border-white shadow"
-              >
-                {user?.avatar ? (
-                  <img
-                    src={user.avatar}
-                    alt="User Avatar"
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-blue-600 text-white">
-                    {getInitial(user?.name)}
+                {open && (
+                  <div className="absolute right-0 mt-2 w-44 bg-white shadow-lg rounded-md overflow-hidden z-50">
+                    <Link
+                      href="/edit-profile"
+                      className="block w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100"
+                    >
+                      Profile Setting
+                    </Link>
+                    <button
+                      onClick={handleLogout}
+                      className="w-full text-left px-4 py-2 text-red-600 hover:bg-gray-100"
+                    >
+                      Logout
+                    </button>
                   </div>
                 )}
-              </button>
-
-              {open && (
-                <div className="absolute right-0 mt-2 w-40 bg-white shadow-lg rounded-md overflow-hidden">
-                  <a
-                    href="/edit-profile"
-                    className="block w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100"
-                  >
-                    Profile Setting
-                  </a>
-                  <button
-                    onClick={handleLogout}
-                    className="w-full text-left px-4 py-2 text-red-600 hover:bg-gray-100"
-                  >
-                    Logout
-                  </button>
-                </div>
-              )}
+              </div>
             </div>
           </>
         ) : (
-          <>
+          <div className="flex flex-col md:flex-row md:items-center md:space-x-6 space-y-3 md:space-y-0 px-6 md:px-0 py-4 md:py-0">
             {isHomePage ? (
               <>
-                <a href="#beranda" className="hover:underline scroll-smooth">
+                <a href="#beranda" className="hover:underline">
                   Beranda
                 </a>
-                <a href="#tentang" className="hover:underline scroll-smooth">
+                <a href="#tentang" className="hover:underline">
                   Tentang
                 </a>
-                <a href="#cara-lapor" className="hover:underline scroll-smooth">
+                <a href="#cara-lapor" className="hover:underline">
                   Cara Lapor
                 </a>
-                <a href="#faq" className="hover:underline scroll-smooth">
+                <a href="#faq" className="hover:underline">
                   FAQ
                 </a>
               </>
@@ -151,11 +156,11 @@ export default function Navbar() {
             <Link href="/login">Login</Link>
             <Link
               href="/register"
-              className="bg-orange-500 text-white px-4 py-2 rounded-md hover:bg-orange-600 transition"
+              className="bg-orange-500 text-white px-4 py-2 rounded-md hover:bg-orange-600 transition text-center"
             >
               Daftar
             </Link>
-          </>
+          </div>
         )}
       </div>
     </nav>

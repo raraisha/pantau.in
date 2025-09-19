@@ -1,10 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, Minus } from 'lucide-react'
 import AOS from 'aos'
 import 'aos/dist/aos.css'
-import { useEffect } from 'react'
+import Link from 'next/link'
 
 const faqData = [
   {
@@ -14,15 +14,18 @@ const faqData = [
   },
   {
     question: 'Siapa saja yang bisa menggunakan Pantau.in?',
-    answer: 'Semua warga Bandung yang telah memiliki akun dapat menggunakan Pantau.in untuk membuat laporan. Admin dan petugas akan menangani laporan sesuai wilayah dan kategori.',
+    answer:
+      'Semua warga Bandung yang telah memiliki akun dapat menggunakan Pantau.in untuk membuat laporan. Admin dan petugas akan menangani laporan sesuai wilayah dan kategori.',
   },
   {
     question: 'Apakah saya harus login untuk membuat laporan?',
-    answer: 'Ya. Untuk menjaga validitas data dan mempermudah pelacakan, kamu harus login terlebih dahulu sebelum mengirim laporan.',
+    answer:
+      'Ya. Untuk menjaga validitas data dan mempermudah pelacakan, kamu harus login terlebih dahulu sebelum mengirim laporan.',
   },
   {
     question: 'Bagaimana saya tahu laporan saya sedang diproses?',
-    answer: 'Setelah laporan dikirim, kamu akan mendapatkan notifikasi melalui email saat laporan diverifikasi, ditugaskan ke petugas, hingga selesai ditindaklanjuti.',
+    answer:
+      'Setelah laporan dikirim, kamu akan mendapatkan notifikasi melalui email saat laporan diverifikasi, ditugaskan ke petugas, hingga selesai ditindaklanjuti.',
   },
 ]
 
@@ -40,6 +43,7 @@ export default function FAQSection() {
   return (
     <section className="bg-orange-50 py-16 px-6 md:px-12" id="faq">
       <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-12 items-start">
+        {/* FAQ List */}
         <div data-aos="fade-up">
           <h2 className="text-3xl font-bold text-blue-800 mb-6">
             Pertanyaan yang Sering Diajukan
@@ -76,19 +80,24 @@ export default function FAQSection() {
           </div>
         </div>
 
+        {/* Tanya Sekarang */}
         <div
-          className="bg-white shadow-md rounded-xl p-6"
+          className="bg-white shadow-md rounded-xl p-6 flex flex-col justify-between"
           data-aos="zoom-in"
           data-aos-delay="200"
         >
-          <h3 className="text-xl font-semibold text-gray-800 mb-2">Masih punya pertanyaan?</h3>
-          <p className="text-gray-600 mb-4">
-            Jangan ragu untuk menghubungi kami jika ada hal yang belum jelas. Kami siap membantu
-            menjawab pertanyaan Anda kapan saja.
-          </p>
-          <button className="bg-orange-500 text-white font-semibold px-6 py-2 rounded-md hover:bg-orange-600 transition">
-            Tanya Sekarang
-          </button>
+          <div>
+            <h3 className="text-xl font-semibold text-gray-800 mb-2">Masih punya pertanyaan?</h3>
+            <p className="text-gray-600 mb-4">
+              Jangan ragu untuk menghubungi kami jika ada hal yang belum jelas. Kami siap membantu
+              menjawab pertanyaan Anda kapan saja.
+            </p>
+          </div>
+          <Link href="/pertanyaan">
+            <button className="bg-orange-500 text-white font-semibold px-6 py-2 rounded-md hover:bg-orange-600 transition">
+              Tanya Sekarang
+            </button>
+          </Link>
         </div>
       </div>
     </section>
