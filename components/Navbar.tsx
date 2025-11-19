@@ -77,7 +77,7 @@ export default function Navbar() {
 
               {user.role === 'petugas' && (
                 <>
-                  <Link href="/petugas/dashboard-petugas">Dashboard Petugas</Link>
+                  <Link href="/petugas/dashboard-petugas">Dashboard</Link>
                   <Link href="/petugas/tugas">Tugas Saya</Link>
                   <Link href="/petugas/riwayat-tugas">Riwayat Tugas</Link>
                 </>
@@ -87,15 +87,13 @@ export default function Navbar() {
                 <>
                   <Link href="/admin/dashboard">Dashboard Admin</Link>
                   <Link href="/admin/laporan">Manajemen Laporan</Link>
-                  <Link href="/admin/manajemen-petugas">Manajemen Petugas</Link>
-                  <Link href="/admin/manajemen-users">Manajemen Users</Link>
+                  <Link href="/admin/manajemen-users">Manajemen Akun</Link>
                 </>
               )}
             </div>
 
             {/* Notifikasi + Avatar */}
             <div className="flex items-center gap-4 px-6 md:px-0 pb-4 md:pb-0">
-              <button className="text-xl hover:scale-110 transition">🔔</button>
               <div className="relative">
                 <button
                   onClick={() => setOpen(!open)}
