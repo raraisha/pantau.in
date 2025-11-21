@@ -34,6 +34,30 @@ export default function BuatLaporanPage() {
     }
   }
 
+  const sendEmailNotification = async (email: string, nama: string, laporanJudul: string, laporanDeskripsi: string, laporanId: string) => {
+    try {
+      const response = await fetch('/api/send-email-laporan', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          to: email,
+          userName: nama,
+          laporanJudul,
+          laporanDeskripsi,
+          laporanId
+        })
+      })
+
+      if (!response.ok) {
+        console.warn('Email notification failed, but laporan was submitted')
+      }
+    } catch (err) {
+      console.warn('Email sending failed:', err)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -41,8 +65,39 @@ export default function BuatLaporanPage() {
     setSuccess('')
 
     try {
+      // Validasi input
+      if (!judul.trim() || !deskripsi.trim()) {
+        setError('Judul dan deskripsi harus diisi!')
+        setLoading(false)
+        return
+      }
+
+      // Get user dari auth
+      const { data: userData } = await supabase.auth.getUser()
+      const userId = userData?.user?.id
+
+      if (!userId) {
+        setError("Kamu belum login. Silakan login terlebih dahulu.")
+        setLoading(false)
+        return
+      }
+
+      // Get user email dan nama
+      const { data: userDataFromDB } = await supabase
+        .from('users')
+        .select('email, nama')
+        .eq('id', userId)
+        .single()
+
+      if (!userDataFromDB?.email) {
+        setError("Email user tidak ditemukan")
+        setLoading(false)
+        return
+      }
+
       let fotoUrl = null
 
+      // Upload foto jika ada
       if (foto) {
         const fileName = `${Date.now()}-${foto.name.replace(/\s+/g, '-')}`
         const { data, error: uploadError } = await supabase.storage
@@ -61,36 +116,46 @@ export default function BuatLaporanPage() {
         fotoUrl = publicUrl.publicUrl
       }
 
-      const { data: userData } = await supabase.auth.getUser()
-      const userId = userData?.user?.id
-
-      if (!userId) {
-        setError("Kamu belum login. Silakan login terlebih dahulu.")
-        setLoading(false)
-        return
-      }
-
-      const { error: insertError } = await supabase.from('laporan').insert([
-        {
-          judul,
-          deskripsi,
-          latitude: lokasi?.lat,
-          longitude: lokasi?.lng,
-          laporan_foto: fotoUrl,
-          user_id: userId
-        }
-      ])
+      // Insert laporan
+      const { data: laporanData, error: insertError } = await supabase
+        .from('laporan')
+        .insert([
+          {
+            judul,
+            deskripsi,
+            latitude: lokasi?.lat,
+            longitude: lokasi?.lng,
+            laporan_foto: fotoUrl,
+            user_id: userId,
+            status: 'menunggu'
+          }
+        ])
+        .select()
 
       if (insertError) throw insertError
 
-      setSuccess('✓ Laporan berhasil dikirim!')
+      const laporanId = laporanData?.[0]?.id || 'N/A'
+
+      // Send email notification (async, tidak perlu tunggu)
+      sendEmailNotification(
+        userDataFromDB.email,
+        userDataFromDB.nama || 'Pengguna',
+        judul,
+        deskripsi,
+        laporanId
+      )
+
+      setSuccess('✓ Laporan berhasil dikirim! Email konfirmasi telah dikirim ke email Anda.')
       setJudul('')
       setDeskripsi('')
       setFoto(null)
       setFotoPreview(null)
       setLokasi(null)
 
-      setTimeout(() => setSuccess(''), 5000)
+      // Redirect ke halaman laporan setelah 3 detik
+      setTimeout(() => {
+        window.location.href = '/masyarakat/buat-laporan'
+      }, 3000)
     } catch (err: any) {
       setError(err.message || 'Terjadi kesalahan saat mengirim laporan')
     } finally {
@@ -134,14 +199,14 @@ export default function BuatLaporanPage() {
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                 <FileText className="w-4 h-4 text-[#3E1C96]" />
-                Judul Laporan
+                Judul Laporan *
               </label>
               <input
                 type="text"
                 value={judul}
                 onChange={(e) => setJudul(e.target.value)}
                 placeholder="Contoh: Jalan berlubang di depan sekolah"
-                className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#3E1C96] focus:border-[#3E1C96] outline-none text-sm transition-all bg-white hover:border-gray-300"
+                className="text-black w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#3E1C96] focus:border-[#3E1C96] outline-none text-sm transition-all bg-white hover:border-gray-300"
                 required
               />
             </div>
@@ -150,14 +215,14 @@ export default function BuatLaporanPage() {
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                 <FileText className="w-4 h-4 text-[#3E1C96]" />
-                Deskripsi Lengkap
+                Deskripsi Lengkap *
               </label>
               <textarea
                 value={deskripsi}
                 onChange={(e) => setDeskripsi(e.target.value)}
                 rows={5}
                 placeholder="Jelaskan masalah secara detail..."
-                className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#3E1C96] focus:border-[#3E1C96] outline-none text-sm transition-all resize-none bg-white hover:border-gray-300"
+                className="text-black w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#3E1C96] focus:border-[#3E1C96] outline-none text-sm transition-all resize-none bg-white hover:border-gray-300"
                 required
               />
             </div>
@@ -258,7 +323,7 @@ export default function BuatLaporanPage() {
 
             {/* Info Text */}
             <p className="text-xs text-center text-gray-500 mt-4">
-              Laporan kamu akan diverifikasi oleh admin dan akan segera ditindaklanjuti
+              Laporan kamu akan diverifikasi oleh admin dan akan segera ditindaklanjuti. Email konfirmasi akan dikirim ke email terdaftar Anda.
             </p>
           </div>
         </div>

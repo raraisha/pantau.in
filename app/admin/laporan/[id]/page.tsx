@@ -1,13 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import { supabase } from '@/lib/supabase'
-import { Send, Loader2, AlertCircle, CheckCircle, User, Mail, ArrowLeft, MapPin, Calendar, FileText, Award } from 'lucide-react'
-import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
+import { Send, Loader2, AlertCircle, CheckCircle, User, Mail, ArrowLeft, MapPin, Calendar, FileText, Award, Image as ImageIcon } from 'lucide-react'
 
 type Laporan = {
   id: string
@@ -21,6 +19,8 @@ type Laporan = {
   petugas_id?: string
   user_id?: string
   laporan_foto?: string
+  laporan_bukti?: string
+  hasil_pekerjaan?: string
   petugas?: {
     id: string
     nama: string
@@ -42,6 +42,7 @@ type Petugas = {
 export default function KelolaMasaLaporan() {
   const params = useParams()
   const laporan_id = params.id as string
+  const mapRef = useRef<any>(null)
 
   const [laporan, setLaporan] = useState<Laporan | null>(null)
   const [petugas, setPetugas] = useState<Petugas[]>([])
@@ -58,14 +59,22 @@ export default function KelolaMasaLaporan() {
   }, [laporan_id])
 
   useEffect(() => {
-    if (laporan?.latitude && laporan?.longitude) {
-      setTimeout(() => {
-        const map = L.map('map').setView([laporan.latitude, laporan.longitude], 15)
+    if (laporan?.latitude && laporan?.longitude && mapRef.current) {
+      const loadMap = async () => {
+        const L = await import('leaflet')
+        
+        if (mapRef.current._leaflet_id) {
+          mapRef.current._leaflet_map?.remove()
+        }
+
+        const map = L.map(mapRef.current).setView([laporan.latitude, laporan.longitude], 15)
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '&copy; OpenStreetMap contributors'
+          attribution: '&copy; OpenStreetMap contributors',
+          maxZoom: 19
         }).addTo(map)
         L.marker([laporan.latitude, laporan.longitude]).addTo(map)
-      }, 100)
+      }
+      loadMap()
     }
   }, [laporan])
 
@@ -132,20 +141,49 @@ export default function KelolaMasaLaporan() {
     setSuccess('')
 
     try {
-      const { error } = await supabase
+      // Get data petugas yang dipilih
+      const petugasData = petugas.find(p => p.id === selectedPetugas)
+      
+      if (!petugasData) {
+        setError('Data petugas tidak ditemukan')
+        setAssigning(false)
+        return
+      }
+
+      // Update status laporan
+      const { error: updateError } = await supabase
         .from('laporan')
         .update({ petugas_id: selectedPetugas, status: 'diproses' })
         .eq('id', laporan_id)
 
-      if (error) {
+      if (updateError) {
         setError('Gagal assign petugas')
+        setAssigning(false)
         return
       }
 
-      setSuccess('Petugas berhasil di-assign!')
+      // Kirim email notifikasi (async, tidak perlu tunggu)
+      if (petugasData.email && laporan?.users?.email) {
+        fetch('/api/send-email-assign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            petugasEmail: petugasData.email,
+            petugasNama: petugasData.nama,
+            userEmail: laporan.users.email,
+            userName: laporan.users.nama,
+            laporanJudul: laporan.judul,
+            laporanDeskripsi: laporan.deskripsi,
+            laporanId: laporan_id
+          })
+        }).catch(err => console.warn('Email notification failed:', err))
+      }
+
+      setSuccess('Petugas berhasil di-assign! Email notifikasi telah dikirim.')
       setSelectedPetugas('')
       setTimeout(() => fetchLaporanDetail(), 1000)
-    } catch {
+    } catch (err) {
+      console.error(err)
       setError('Terjadi kesalahan')
     } finally {
       setAssigning(false)
@@ -158,7 +196,7 @@ export default function KelolaMasaLaporan() {
     setSuccess('')
 
     try {
-      const response = await fetch('/api/send-email', {
+      const response = await fetch('/api/send-email', { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -249,29 +287,25 @@ export default function KelolaMasaLaporan() {
       <Navbar />
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50 pt-24 pb-12 px-4">
         <div className="max-w-7xl mx-auto">
-          {/* Back Button */}
           <button onClick={() => window.history.back()} className="group flex items-center gap-2 text-blue-600 hover:text-blue-700 mb-6 font-semibold transition-all duration-200">
             <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" /> Kembali
           </button>
 
-          {/* Alert Messages */}
           {error && (
-            <div className="bg-red-50 border-2 border-red-200 text-red-700 px-5 py-4 rounded-xl mb-6 flex items-center gap-3 shadow-sm animate-in fade-in slide-in-from-top">
+            <div className="bg-red-50 border-2 border-red-200 text-red-700 px-5 py-4 rounded-xl mb-6 flex items-center gap-3 shadow-sm">
               <AlertCircle className="w-5 h-5 flex-shrink-0" />
               <span className="font-medium">{error}</span>
             </div>
           )}
           {success && (
-            <div className="bg-green-50 border-2 border-green-200 text-green-700 px-5 py-4 rounded-xl mb-6 flex items-center gap-3 shadow-sm animate-in fade-in slide-in-from-top">
+            <div className="bg-green-50 border-2 border-green-200 text-green-700 px-5 py-4 rounded-xl mb-6 flex items-center gap-3 shadow-sm">
               <CheckCircle className="w-5 h-5 flex-shrink-0" />
               <span className="font-medium">{success}</span>
             </div>
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* LEFT COLUMN - Laporan Details */}
             <div className="lg:col-span-2 space-y-6">
-              {/* Header Card */}
               <div className={`${statusConfig.bg} border-2 ${statusConfig.border} rounded-2xl p-6`}>
                 <div className="flex justify-between items-start mb-4">
                   <div>
@@ -287,14 +321,30 @@ export default function KelolaMasaLaporan() {
                 </div>
               </div>
 
-              {/* Image */}
               {laporan.laporan_foto && (
-                <div className="rounded-2xl overflow-hidden shadow-lg border border-gray-200">
-                  <img src={laporan.laporan_foto} alt={laporan.judul} className="w-full h-64 object-cover" />
+                <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+                  <div className="flex items-center gap-3 mb-4">
+                    <ImageIcon className="w-6 h-6 text-blue-600" />
+                    <h3 className="text-lg font-bold text-gray-800">Foto Laporan</h3>
+                  </div>
+                  <div className="rounded-xl overflow-hidden shadow-lg border border-gray-200">
+                    <img src={laporan.laporan_foto} alt={laporan.judul} className="w-full h-64 object-cover" />
+                  </div>
                 </div>
               )}
 
-              {/* Description */}
+              {laporan.laporan_bukti && (
+                <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+                  <div className="flex items-center gap-3 mb-4">
+                    <FileText className="w-6 h-6 text-purple-600" />
+                    <h3 className="text-lg font-bold text-gray-800">Bukti Laporan</h3>
+                  </div>
+                  <div className="rounded-xl overflow-hidden shadow-lg border border-gray-200">
+                    <img src={laporan.laporan_bukti} alt="Bukti Laporan" className="w-full h-64 object-cover" />
+                  </div>
+                </div>
+              )}
+
               <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
                 <div className="flex items-center gap-3 mb-4">
                   <FileText className="w-6 h-6 text-blue-600" />
@@ -305,7 +355,18 @@ export default function KelolaMasaLaporan() {
                 </div>
               </div>
 
-              {/* Location */}
+              {laporan.status === 'selesai' && laporan.hasil_pekerjaan && (
+                <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+                  <div className="flex items-center gap-3 mb-4">
+                    <CheckCircle className="w-6 h-6 text-green-600" />
+                    <h3 className="text-lg font-bold text-gray-800">Hasil Pekerjaan</h3>
+                  </div>
+                  <div className="rounded-xl overflow-hidden shadow-lg border border-gray-200">
+                    <img src={laporan.hasil_pekerjaan} alt="Hasil Pekerjaan" className="w-full h-64 object-cover" />
+                  </div>
+                </div>
+              )}
+
               {(laporan.latitude && laporan.longitude) && (
                 <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
                   <div className="flex items-center gap-3 mb-4">
@@ -327,14 +388,12 @@ export default function KelolaMasaLaporan() {
                       Maps
                     </button>
                   </div>
-                  <div id="map" className="w-full h-60 rounded-xl overflow-hidden shadow-lg border border-gray-200"></div>
+                  <div ref={mapRef} className="w-full h-60 rounded-xl overflow-hidden shadow-lg border border-gray-200"></div>
                 </div>
               )}
             </div>
 
-            {/* RIGHT COLUMN - Admin Actions */}
             <div className="lg:col-span-1 space-y-6">
-              {/* User Information */}
               <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
                 <div className="flex items-center gap-3 mb-4">
                   <User className="w-6 h-6 text-blue-600" />
@@ -356,7 +415,6 @@ export default function KelolaMasaLaporan() {
                 </div>
               </div>
 
-              {/* Status-specific sections */}
               {laporan.status === 'menunggu' && (
                 <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
                   <h3 className="font-bold text-lg text-gray-800 mb-3">Assign Petugas</h3>
