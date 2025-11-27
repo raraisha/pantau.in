@@ -198,7 +198,7 @@ export default async function handler(
                 </div>
 
                 <div class="footer">
-                  <p>© 2024 Sistem Manajemen Laporan. Semua hak dilindungi.</p>
+                  <p><strong>© 2025 PantauIn Bandung</strong></p>
                   <p>Email ini dikirim secara otomatis. Mohon jangan membalas email ini.</p>
                 </div>
               </div>

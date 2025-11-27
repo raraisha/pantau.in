@@ -400,7 +400,7 @@ export default async function handler(
                 </div>
 
                 <div class="footer">
-                  <p><strong>© 2024 Sistem Manajemen Laporan</strong></p>
+                  <p><strong>© 2025 PantauIn Bandung</strong></p>
                   <p>Terima kasih atas partisipasi kamu dalam menciptakan lingkungan yang lebih baik!</p>
                   <p style="margin-top: 10px;">Email ini dikirim secara otomatis. Mohon jangan membalas email ini.</p>
                 </div>
