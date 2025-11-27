@@ -1,3 +1,5 @@
+"use client"
+
 import { useState, useEffect } from 'react'
 import { Plus, Minus, Send, Loader2, MessageSquare, Lightbulb } from 'lucide-react'
 import Link from 'next/link'
