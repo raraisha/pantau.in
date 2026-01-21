@@ -6,459 +6,387 @@ import Footer from '@/components/Footer'
 import AOS from 'aos'
 import 'aos/dist/aos.css'
 import { supabase } from '@/lib/supabase'
-import { Clock, CheckCircle, FileText, Send, AlertCircle, ArrowLeft, Loader2, Edit2, Eye, Image, Upload } from 'lucide-react'
+import { 
+  ClipboardList, Clock, CheckCircle, Loader2, 
+  TrendingUp, AlertCircle, ArrowRight, MapPin, AlertTriangle,
+  Search, Zap
+} from 'lucide-react'
 
-type Laporan = {
-  id: string
-  judul: string
-  deskripsi?: string
-  status: 'menunggu' | 'diproses' | 'selesai'
+// Tipe Data yang Disesuaikan
+type LaporanPetugas = {
+  id_pelaksanaan: string
+  status_pelaksanaan: 'belum_mulai' | 'sedang_dikerjakan' | 'selesai' | 'revisi'
   created_at: string
-  petugas_id?: string
-  catatan_petugas?: string
-  laporan_bukti?: string
-  laporan_foto?: string
+  judul: string
+  deskripsi: string
+  lokasi: string
+  urgensi: string
+  catatan_dinas: string
 }
 
-export default function HalamanTugas() {
-  const [laporan, setLaporan] = useState<Laporan[]>([])
+export default function DashboardPetugas() {
+  const [tugas, setTugas] = useState<LaporanPetugas[]>([])
+  const [filteredTugas, setFilteredTugas] = useState<LaporanPetugas[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedLaporan, setSelectedLaporan] = useState<Laporan | null>(null)
-  const [showModal, setShowModal] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
-
-  // Form states
-  const [statusForm, setStatusForm] = useState<'menunggu' | 'diproses'>('diproses')
-  const [hasilPekerjaan, setHasilPekerjaan] = useState('')
-  const [buktiFile, setBuktiFile] = useState<File | null>(null)
-  const [buktiPreview, setBuktiPreview] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterStatus, setFilterStatus] = useState<string>('semua')
+  const [statistik, setStatistik] = useState({
+    total: 0,
+    baru: 0,
+    sedang_dikerjakan: 0,
+    selesai: 0,
+  })
 
   useEffect(() => {
     AOS.init({ duration: 800, once: true })
-    fetchTugasPetugas()
+    fetchData()
   }, [])
 
-  const fetchTugasPetugas = async () => {
+  useEffect(() => {
+    applyFilters()
+  }, [searchQuery, filterStatus, tugas])
+
+const fetchData = async () => {
     try {
+      setLoading(true)
+      
+      // 1. Ambil User Login (Auth)
       const { data: { user } } = await supabase.auth.getUser()
+      
       if (!user) {
-        setError('Gagal mengambil data user')
-        setLoading(false)
-        return
+         alert("Kamu belum login!");
+         return;
       }
 
-      const { data, error: err } = await supabase
-        .from('laporan')
-        .select('*')
-        .eq('petugas_id', user.id)
-        .neq('status', 'selesai')
-        .order('created_at', { ascending: false })
+      // 2. Cek Log: Siapa yang login?
+      console.log("🔑 Login sebagai Auth ID:", user.id);
 
-      if (err) {
-        setError('Gagal memuat tugas')
-        return
+      // 3. Cari Data Petugas berdasarkan Auth ID (account_id)
+      // Kita cari: "Siapa petugas yang account_id nya = user.id?"
+      const { data: dataPetugas, error: errPetugas } = await supabase
+        .from('petugas')
+        .select('id_petugas, nama')
+        .eq('account_id', user.id) // <--- PENTING: Pakai kolom baru tadi
+        .single()
+
+      if (errPetugas || !dataPetugas) {
+        console.error("❌ Akun ini tidak terdaftar sebagai petugas di tabel public.petugas");
+        console.warn("Pastikan email di tabel 'petugas' sama dengan email login, lalu jalankan script SQL sinkronisasi.");
+        return;
       }
 
-      setLaporan(data || [])
-    } catch (err) {
-      console.error(err)
-      setError('Terjadi kesalahan')
+      console.log("✅ Terdeteksi sebagai Petugas:", dataPetugas.nama, "(ID:", dataPetugas.id_petugas, ")");
+
+      // 4. Gunakan ID Petugas ASLI untuk ambil tugas
+      const realPetugasId = dataPetugas.id_petugas;
+
+      const { data, error } = await supabase
+        .from('pelaksanaan')
+        .select(`
+          id_pelaksanaan,
+          status_pelaksanaan,
+          created_at,
+          laporan_dinas:laporan_dinas!fk_pelaksanaan_laporan_dinas (
+            catatan_dinas,
+            laporan:laporan!fk_laporan_dinas_laporan (
+              judul,
+              deskripsi,
+              lokasi,
+              urgensi_laporan
+            )
+          )
+        `)
+        .eq('id_petugas', realPetugasId) // <--- Pakai ID Petugas dari tabel, bukan ID Auth
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error("❌ Error Fetch Tugas:", error);
+        return;
+      }
+
+      // ... (Sisa kodenya sama, formatting data dsb)
+      if (data) {
+         // ... proses mapping data ...
+         const formattedData = data.map((item: any) => ({
+            // ... copy mapping yg lama ...
+            id_pelaksanaan: item.id_pelaksanaan,
+            status_pelaksanaan: item.status_pelaksanaan,
+            created_at: item.created_at,
+            judul: item.laporan_dinas?.laporan?.judul || 'Judul Tidak Tersedia',
+            deskripsi: item.laporan_dinas?.laporan?.deskripsi || '-',
+            lokasi: item.laporan_dinas?.laporan?.lokasi || '-',
+            urgensi: item.laporan_dinas?.laporan?.urgensi_laporan || 'rendah',
+            catatan_dinas: item.laporan_dinas?.catatan_dinas || '-'
+         }))
+         setTugas(formattedData)
+         // ... update statistik ...
+         setStatistik({
+            total: formattedData.length,
+            baru: formattedData.filter((t: any) => t.status_pelaksanaan === 'belum_mulai').length,
+            sedang_dikerjakan: formattedData.filter((t: any) => t.status_pelaksanaan === 'sedang_dikerjakan').length,
+            selesai: formattedData.filter((t: any) => ['selesai', 'menunggu verifikasi admin'].includes(t.status_pelaksanaan)).length,
+         })
+      }
+
+    } catch (err: any) {
+      console.error("Error System:", err.message);
     } finally {
       setLoading(false)
     }
-  }
+  } 
+  const applyFilters = () => {
+    let filtered = [...tugas]
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] || null
-    setBuktiFile(file)
-
-    if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setBuktiPreview(reader.result as string)
-      }
-      reader.readAsDataURL(file)
-    } else {
-      setBuktiPreview(null)
-    }
-  }
-
-  const handleUpdateStatus = async (laporanId: string, newStatus: 'menunggu' | 'diproses') => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { error: err } = await supabase
-        .from('laporan')
-        .update({ status: newStatus })
-        .eq('id', laporanId)
-        .eq('petugas_id', user.id)
-
-      if (err) {
-        setError('Gagal update status')
-        return
-      }
-
-      setSuccess('Status berhasil diubah!')
-      fetchTugasPetugas()
-    } catch (err) {
-      setError('Terjadi kesalahan')
-    }
-  }
-
-  const handleSubmitTugas = async () => {
-    if (!hasilPekerjaan.trim()) {
-      setError('Hasil pekerjaan tidak boleh kosong')
-      return
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(t => 
+        t.judul.toLowerCase().includes(query) ||
+        t.lokasi.toLowerCase().includes(query)
+      )
     }
 
-    if (!selectedLaporan) return
-
-    setSubmitting(true)
-    setError('')
-    setSuccess('')
-
-    try {
-      let buktiUrl = null
-
-      // Upload bukti jika ada
-      if (buktiFile) {
-        const fileName = `${Date.now()}-${buktiFile.name.replace(/\s+/g, '-')}`
-        const { data, error: uploadErr } = await supabase.storage
-          .from('laporan-bukti')
-          .upload(fileName, buktiFile, {
-            cacheControl: '3600',
-            upsert: false
-          })
-
-        if (uploadErr) throw new Error(`Gagal upload bukti: ${uploadErr.message}`)
-
-        const { data: publicUrl } = supabase.storage
-          .from('laporan-bukti')
-          .getPublicUrl(fileName)
-
-        buktiUrl = publicUrl.publicUrl
-      }
-
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('User tidak ditemukan')
-
-      // Update laporan dengan feedback
-      const { error: updateErr } = await supabase
-        .from('laporan')
-        .update({
-          status: 'selesai',
-          catatan_petugas: hasilPekerjaan,
-          laporan_bukti: buktiUrl,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', selectedLaporan.id)
-        .eq('petugas_id', user.id)
-
-      if (updateErr) throw updateErr
-
-      setSuccess('✓ Laporan berhasil disubmit untuk verifikasi admin!')
-      setShowModal(false)
-      setHasilPekerjaan('')
-      setBuktiFile(null)
-      setBuktiPreview(null)
-      setSelectedLaporan(null)
-
-      setTimeout(() => {
-        fetchTugasPetugas()
-      }, 1500)
-    } catch (err: any) {
-      setError(err.message || 'Gagal submit laporan')
-    } finally {
-      setSubmitting(false)
+    if (filterStatus !== 'semua') {
+      filtered = filtered.filter(t => t.status_pelaksanaan === filterStatus)
     }
+
+    setFilteredTugas(filtered)
   }
 
   const getStatusBadge = (status: string) => {
-    switch(status) {
-      case 'menunggu':
-        return { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Menunggu' }
-      case 'diproses':
-        return { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Diproses' }
-      case 'selesai':
-        return { bg: 'bg-green-100', text: 'text-green-700', label: 'Selesai' }
-      default:
-        return { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Unknown' }
+    const configs = {
+      belum_mulai: {
+        bg: 'bg-gradient-to-r from-amber-400 to-orange-500', 
+        text: 'text-white', 
+        icon: <Clock className="w-4 h-4" />, 
+        label: 'Tugas Baru',
+        glow: 'shadow-lg shadow-amber-500/50'
+      },
+      sedang_dikerjakan: {
+        bg: 'bg-gradient-to-r from-blue-500 to-cyan-500', 
+        text: 'text-white', 
+        icon: <Loader2 className="w-4 h-4 animate-spin" />, 
+        label: 'Sedang Proses',
+        glow: 'shadow-lg shadow-blue-500/50'
+      },
+      menunggu_verifikasi_admin: {
+        bg: 'bg-gradient-to-r from-indigo-500 to-purple-500', 
+        text: 'text-white', 
+        icon: <Clock className="w-4 h-4" />, 
+        label: 'Verifikasi',
+        glow: 'shadow-lg shadow-indigo-500/50'
+      },
+      selesai: {
+        bg: 'bg-gradient-to-r from-green-500 to-emerald-600', 
+        text: 'text-white', 
+        icon: <CheckCircle className="w-4 h-4" />, 
+        label: 'Selesai',
+        glow: 'shadow-lg shadow-green-500/50'
+      },
+      revisi: {
+        bg: 'bg-gradient-to-r from-red-500 to-pink-600', 
+        text: 'text-white', 
+        icon: <AlertCircle className="w-4 h-4" />, 
+        label: 'Revisi',
+        glow: 'shadow-lg shadow-red-500/50'
+      }
     }
+    const config = configs[status as keyof typeof configs] || configs.belum_mulai
+    return (
+      <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold ${config.bg} ${config.text} ${config.glow} transition-all duration-300 hover:scale-105`}>
+        {config.icon} {config.label}
+      </span>
+    )
   }
 
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
+  const getUrgensiStyle = (urgensi: string) => {
+    if (urgensi === 'tinggi') {
+      return 'bg-gradient-to-r from-red-500 to-pink-600 text-white shadow-lg shadow-red-500/40'
+    }
+    if (urgensi === 'sedang') {
+      return 'bg-gradient-to-r from-yellow-400 to-orange-500 text-white shadow-md shadow-yellow-500/30'
+    }
+    return 'bg-gradient-to-r from-blue-400 to-indigo-500 text-white shadow-md shadow-blue-400/30'
   }
 
   return (
     <>
       <Navbar />
-      <div className="min-h-screen bg-gradient-to-br from-[#FDF7EE] via-[#f8f4ff] to-[#FDF7EE] pt-24 pb-12 px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-orange-50 pt-24 pb-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
+          
           {/* Header */}
-          <div className="mb-10" data-aos="fade-down">
-            <h1 className="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#3E1C96] to-[#F04438] mb-3">
-              🛠️ Tugas Saya
-            </h1>
-            <p className="text-gray-600 text-lg">
-              Kelola tugas yang telah di-assign kepada Anda
-            </p>
+          <div className="mb-10 relative" data-aos="fade-down">
+            <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-pink-600 blur-3xl opacity-20 rounded-3xl"></div>
+            <div className="relative">
+              <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-600 via-pink-600 to-orange-600 mb-3 flex items-center gap-3">
+                <span className="text-5xl">🛠️</span> Tugas Lapangan
+              </h1>
+              <p className="text-gray-600 text-lg font-medium">Kelola semua tugas Anda dengan efisien dan terorganisir</p>
+            </div>
           </div>
 
-          {/* Alert Messages */}
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 flex items-start gap-3" data-aos="fade-down">
-              <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-              <p className="text-red-700">{error}</p>
-            </div>
-          )}
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10" data-aos="fade-up">
+            <StatCard 
+              title="Total Tugas" 
+              value={statistik.total} 
+              gradient="from-purple-500 to-indigo-600" 
+              icon={<ClipboardList className="w-8 h-8" />}
+              delay={0}
+            />
+            <StatCard 
+              title="Tugas Baru" 
+              value={statistik.baru} 
+              gradient="from-amber-500 to-orange-600" 
+              icon={<Clock className="w-8 h-8" />}
+              delay={100}
+            />
+            <StatCard 
+              title="Sedang Proses" 
+              value={statistik.sedang_dikerjakan} 
+              gradient="from-blue-500 to-cyan-600" 
+              icon={<Zap className="w-8 h-8" />}
+              delay={200}
+            />
+            <StatCard 
+              title="Selesai" 
+              value={statistik.selesai} 
+              gradient="from-green-500 to-emerald-600" 
+              icon={<CheckCircle className="w-8 h-8" />}
+              delay={300}
+            />
+          </div>
 
-          {success && (
-            <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6 flex items-start gap-3" data-aos="fade-down">
-              <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-              <p className="text-green-700">{success}</p>
+          {/* Search & Filter */}
+          <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl p-6 mb-8 border border-white/50" data-aos="fade-up">
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="flex-1 relative">
+                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <input 
+                  type="text"
+                  placeholder="Cari tugas atau lokasi..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-12 pr-4 py-3 rounded-xl border-2 border-gray-200 focus:border-purple-500 focus:ring-4 focus:ring-purple-500/20 outline-none transition-all duration-300"
+                />
+              </div>
+
+              <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0 no-scrollbar">
+                {['semua', 'belum_mulai', 'sedang_dikerjakan', 'selesai'].map((status) => (
+                  <button
+                    key={status}
+                    onClick={() => setFilterStatus(status)}
+                    className={`whitespace-nowrap px-6 py-3 rounded-xl font-bold transition-all duration-300 ${
+                      filterStatus === status 
+                        ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/50' 
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {status === 'semua' ? 'Semua' : status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                  </button>
+                ))}
+              </div>
             </div>
-          )}
+          </div>
 
           {/* Table */}
-          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-2xl overflow-hidden border border-gray-100" data-aos="fade-up">
-            <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-[#3E1C96] to-[#5B2CB8]">
-              <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                📂 Daftar Tugas
+          <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl overflow-hidden border border-white/50" data-aos="fade-up">
+            <div className="p-6 bg-gradient-to-r from-purple-600 via-pink-600 to-orange-600 text-white">
+              <h2 className="font-black text-2xl flex items-center gap-3">
+                <ClipboardList className="w-7 h-7" />
+                Daftar Tugas Anda
               </h2>
             </div>
-
+            
             {loading ? (
-              <div className="flex justify-center items-center py-20">
-                <Loader2 className="w-10 h-10 animate-spin text-[#3E1C96]" />
+              <div className="p-20 text-center">
+                <Loader2 className="w-12 h-12 animate-spin mx-auto text-purple-600 mb-4" />
+                <p className="text-gray-500 font-medium">Memuat data tugas...</p>
               </div>
-            ) : laporan.length > 0 ? (
+            ) : filteredTugas.length > 0 ? (
               <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b">
+                <table className="w-full text-left">
+                  <thead className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-700 text-sm uppercase font-bold">
                     <tr>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-800 uppercase">Judul</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-800 uppercase">Deskripsi</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-800 uppercase">Tanggal</th>
-                      <th className="px-6 py-4 text-center text-xs font-semibold text-gray-800 uppercase">Status</th>
-                      <th className="px-6 py-4 text-center text-xs font-semibold text-gray-800 uppercase">Aksi</th>
+                      <th className="px-6 py-5">Laporan</th>
+                      <th className="px-6 py-5">Lokasi</th>
+                      <th className="px-6 py-5">Urgensi</th>
+                      <th className="px-6 py-5">Status</th>
+                      <th className="px-6 py-5 text-center">Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {laporan.map((item, index) => {
-                      const badge = getStatusBadge(item.status)
-                      return (
-                        <tr key={item.id} className={`hover:bg-purple-50/50 transition ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
-                          <td className="px-6 py-4 font-semibold text-[#3E1C96] max-w-xs truncate">{item.judul}</td>
-                          <td className="px-6 py-4 text-gray-700 text-sm max-w-md line-clamp-2">{item.deskripsi || '-'}</td>
-                          <td className="px-6 py-4 text-gray-600 text-sm whitespace-nowrap">{formatDate(item.created_at)}</td>
-                          <td className="px-6 py-4 text-center">
-                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${badge.bg} ${badge.text}`}>
-                              {badge.label}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-center flex justify-center gap-2">
-                            {item.status === 'menunggu' && (
-                              <button
-                                onClick={() => handleUpdateStatus(item.id, 'diproses')}
-                                className="px-3 py-1 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200 text-xs font-semibold transition"
-                              >
-                                Mulai
-                              </button>
-                            )}
-                            {item.status === 'diproses' && (
-                              <button
-                                onClick={() => {
-                                  setSelectedLaporan(item)
-                                  setHasilPekerjaan('')
-                                  setBuktiFile(null)
-                                  setBuktiPreview(null)
-                                  setShowModal(true)
-                                  setError('')
-                                }}
-                                className="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg hover:shadow-lg text-xs font-semibold transition animate-pulse"
-                              >
-                                ✓ Selesaikan
-                              </button>
-                            )}
-                            <button
-                              onClick={() => {
-                                setSelectedLaporan(item)
-                                setHasilPekerjaan('')
-                                setBuktiFile(null)
-                                setBuktiPreview(null)
-                                setShowModal(true)
-                                setError('')
-                              }}
-                              className="px-3 py-1 bg-purple-100 text-purple-600 rounded-lg hover:bg-purple-200 text-xs font-semibold transition"
-                            >
-                              Detail
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
+                    {filteredTugas.map((item, idx) => (
+                      <tr 
+                        key={item.id_pelaksanaan} 
+                        className="hover:bg-gradient-to-r hover:from-purple-50 hover:to-pink-50 transition-all duration-300 group"
+                        data-aos="fade-up"
+                        data-aos-delay={idx * 50}
+                      >
+                        <td className="px-6 py-5">
+                          <p className="font-bold text-gray-800 group-hover:text-purple-600 transition-colors text-lg line-clamp-1">{item.judul}</p>
+                          <p className="text-sm text-gray-500 line-clamp-2 mt-1">{item.deskripsi}</p>
+                        </td>
+                        <td className="px-6 py-5">
+                          <div className="flex items-center gap-2 text-gray-700">
+                            <MapPin className="w-5 h-5 text-red-500 flex-shrink-0" /> 
+                            <span className="font-medium line-clamp-1">{item.lokasi}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-5">
+                          <span className={`text-xs font-bold px-4 py-2 rounded-full ${getUrgensiStyle(item.urgensi)} transition-all duration-300 hover:scale-110 inline-block`}>
+                            {item.urgensi.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="px-6 py-5">{getStatusBadge(item.status_pelaksanaan)}</td>
+                        <td className="px-6 py-5 text-center">
+                          <button 
+                            onClick={() => window.location.href = `/petugas/tugas/${item.id_pelaksanaan}`}
+                            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-pink-600 hover:to-orange-600 text-white px-6 py-3 rounded-xl text-sm font-bold flex items-center gap-2 mx-auto shadow-lg hover:shadow-2xl hover:scale-105 transition-all duration-300 whitespace-nowrap"
+                          >
+                            Kelola <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
             ) : (
-              <div className="text-center py-20">
-                <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-600 font-medium">Tidak ada tugas yang perlu dikerjakan</p>
+              <div className="p-20 text-center">
+                <div className="bg-gradient-to-br from-gray-100 to-gray-200 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <AlertTriangle className="w-12 h-12 text-gray-400" />
+                </div>
+                <p className="text-gray-600 font-bold text-xl mb-2">Tidak Ada Tugas Ditemukan</p>
+                <p className="text-gray-500">Tugas yang di-assign akan muncul di sini</p>
               </div>
             )}
           </div>
         </div>
       </div>
-
-      {/* Modal Detail & Submit */}
-      {showModal && selectedLaporan && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-8 max-h-[90vh] overflow-y-auto" data-aos="zoom-in">
-            {/* Close Button */}
-            <button
-              onClick={() => setShowModal(false)}
-              className="absolute top-6 right-6 text-gray-400 hover:text-gray-600 text-2xl"
-            >
-              ✕
-            </button>
-
-            <h2 className="text-3xl font-bold text-gray-800 mb-2">{selectedLaporan.judul}</h2>
-            <p className="text-gray-600 text-sm mb-6">Berikan feedback dan bukti pekerjaan Anda</p>
-
-            {/* Foto Laporan */}
-            {selectedLaporan.laporan_foto && (
-              <div className="mb-6">
-                <p className="text-sm font-semibold text-gray-700 mb-2">📷 Foto Laporan Awal</p>
-                <img
-                  src={selectedLaporan.laporan_foto}
-                  alt="Foto laporan"
-                  className="w-full h-48 object-cover rounded-lg border-2 border-gray-200"
-                />
-              </div>
-            )}
-
-            {/* Deskripsi */}
-            <div className="mb-6">
-              <p className="text-sm font-semibold text-gray-700 mb-2">📝 Deskripsi Masalah</p>
-              <div className="bg-gray-50 p-4 rounded-lg border-2 border-gray-200">
-                <p className="text-gray-800 whitespace-pre-wrap text-sm">{selectedLaporan.deskripsi || '-'}</p>
-              </div>
-            </div>
-
-            {/* Divider */}
-            <div className="border-t-2 border-gray-200 my-6"></div>
-
-            {/* Form Submit - Feedback */}
-            <div className="space-y-4">
-              <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                ✅ Kirim Feedback Penyelesaian
-              </h3>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Hasil Pekerjaan / Feedback *
-                </label>
-                <textarea
-                  value={hasilPekerjaan}
-                  onChange={(e) => setHasilPekerjaan(e.target.value)}
-                  placeholder="Contoh: Jalan sudah diperbaiki dan bebas dari lubang. Pekerjaan selesai dengan baik dan sesuai standar."
-                  className="text-black w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-[#3E1C96] focus:ring-2 focus:ring-[#3E1C96]/20 outline-none transition-all resize-none"
-                  rows={5}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  📸 Upload Foto Bukti (Opsional)
-                </label>
-                <div className="relative">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileChange}
-                    className="hidden"
-                    id="bukti-upload"
-                  />
-                  <label
-                    htmlFor="bukti-upload"
-                    className="flex items-center justify-center gap-2 w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-[#3E1C96] hover:bg-purple-50/50 transition-all group"
-                  >
-                    <Upload className="w-5 h-5 text-gray-400 group-hover:text-[#3E1C96]" />
-                    <span className="text-sm text-gray-600 group-hover:text-[#3E1C96]">
-                      {buktiFile ? buktiFile.name : 'Klik untuk upload bukti foto hasil pekerjaan'}
-                    </span>
-                  </label>
-                </div>
-
-                {buktiPreview && (
-                  <div className="relative mt-3 group">
-                    <img
-                      src={buktiPreview}
-                      alt="Preview bukti"
-                      className="w-full h-48 object-cover rounded-lg border-2 border-green-200"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setBuktiFile(null)
-                        setBuktiPreview(null)
-                        const fileInput = document.getElementById('bukti-upload') as HTMLInputElement
-                        if (fileInput) fileInput.value = ''
-                      }}
-                      className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-7 h-7 flex items-center justify-center hover:bg-red-600 font-bold"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Buttons */}
-            <div className="flex gap-3 mt-8">
-              <button
-                onClick={() => setShowModal(false)}
-                className="flex-1 px-4 py-3 border-2 border-gray-300 text-gray-800 rounded-lg font-semibold hover:bg-gray-50 transition"
-              >
-                Batal
-              </button>
-              <button
-                onClick={handleSubmitTugas}
-                disabled={submitting || !hasilPekerjaan.trim()}
-                className="flex-1 px-4 py-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {submitting ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    Mengirim...
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-5 h-5" />
-                    Kirim Feedback ke Admin
-                  </>
-                )}
-              </button>
-            </div>
-
-            <p className="text-xs text-gray-500 text-center mt-4">
-              Setelah dikirim, status tugas akan berubah menjadi SELESAI dan menunggu verifikasi admin
-            </p>
-          </div>
-        </div>
-      )}
-
       <Footer />
     </>
+  )
+}
+
+function StatCard({ title, value, gradient, icon, delay }: any) {
+  return (
+    <div 
+      className={`bg-gradient-to-br ${gradient} p-6 rounded-2xl text-white shadow-xl hover:shadow-2xl transform hover:-translate-y-2 transition-all duration-300 cursor-pointer relative overflow-hidden group`}
+      data-aos="fade-up"
+      data-aos-delay={delay}
+    >
+      <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 transition-opacity duration-300"></div>
+      <div className="relative z-10">
+        <div className="flex justify-between items-start mb-4">
+          <div className="opacity-80 group-hover:opacity-100 transition-opacity group-hover:scale-110 transition-transform duration-300">
+            {icon}
+          </div>
+          <span className="text-5xl font-black group-hover:scale-110 transition-transform duration-300">{value}</span>
+        </div>
+        <p className="text-sm font-bold opacity-90 uppercase tracking-wider">{title}</p>
+      </div>
+      <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-white opacity-10 rounded-full group-hover:scale-150 transition-transform duration-500"></div>
+    </div>
   )
 }

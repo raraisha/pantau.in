@@ -8,12 +8,14 @@ import 'aos/dist/aos.css'
 import { supabase } from '@/lib/supabase'
 import { ClipboardList, Users, Clock, CheckCircle, TrendingUp, AlertCircle, ArrowRight, Loader2, Filter } from 'lucide-react'
 
+// Definisi Tipe
 type Laporan = {
-  id: string
+  id: string // Kita akan gunakan alias 'id' dari 'id_laporan'
   judul: string
   deskripsi?: string
   status: 'menunggu' | 'diproses' | 'selesai'
   created_at: string
+  nama_dinas?: string
   petugas?: {
     nama: string
     email: string
@@ -43,32 +45,28 @@ export default function DashboardAdmin() {
 
   const fetchLaporan = async () => {
     try {
+      setLoading(true)
       const { data, error } = await supabase
         .from('laporan')
         .select(`
-          id,
+          id:id_laporan, 
           judul,
           deskripsi,
           status,
-          created_at,
-          petugas:petugas_id (
-            id,
-            nama,
-            email
-          )
-        `)
+          created_at
+        `) // Menggunakan alias 'id:id_laporan' agar sinkron dengan tipe data dan key
         .order('created_at', { ascending: false })
 
       if (error) {
         console.error('Error fetching laporan:', error.message)
-        setLoading(false)
         return
       }
 
-      setLaporan(data || [])
-      hitungStatistik(data || [])
+      const dataLaporan = (data || []) as Laporan[]
+      setLaporan(dataLaporan)
+      hitungStatistik(dataLaporan)
     } catch (err) {
-      console.error(err)
+      console.error('Unexpected error:', err)
     } finally {
       setLoading(false)
     }
@@ -83,12 +81,12 @@ export default function DashboardAdmin() {
   }
 
   const hitungStatistik = (data: Laporan[]) => {
-    const total = data.length
-    const menunggu = data.filter((d) => d.status === 'menunggu').length
-    const diproses = data.filter((d) => d.status === 'diproses').length
-    const selesai = data.filter((d) => d.status === 'selesai').length
-
-    setStatistik({ total, menunggu, diproses, selesai })
+    setStatistik({
+      total: data.length,
+      menunggu: data.filter((d) => d.status === 'menunggu').length,
+      diproses: data.filter((d) => d.status === 'diproses').length,
+      selesai: data.filter((d) => d.status === 'selesai').length,
+    })
   }
 
   const getStatusBadge = (status: string) => {
@@ -232,7 +230,7 @@ export default function DashboardAdmin() {
                       <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Judul Laporan</th>
                       <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Deskripsi</th>
                       <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Tanggal</th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Petugas</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Dinas</th>
                       <th className="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
                       <th className="px-6 py-4 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Aksi</th>
                     </tr>
@@ -240,13 +238,13 @@ export default function DashboardAdmin() {
                   <tbody className="divide-y divide-gray-100">
                     {filteredLaporan.map((item, index) => (
                       <tr 
-                        key={item.id}
+                        key={item.id} // ID sekarang sudah ada nilainya berkat alias di fetchLaporan
                         className={`hover:bg-purple-50/50 transition-all duration-200 ${
                           index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
                         }`}
                       >
                         <td className="px-6 py-4">
-                          <p className="font-semibold text-[#3E1C96] max-w-xs">
+                          <p className="font-semibold text-[#3E1C96] max-w-xs line-clamp-1">
                             {item.judul}
                           </p>
                         </td>
@@ -263,10 +261,7 @@ export default function DashboardAdmin() {
                         <td className="px-6 py-4">
                           <div className="text-sm">
                             <p className="font-semibold text-gray-800">
-                              {item.petugas?.nama || '-'}
-                            </p>
-                            <p className="text-gray-600 text-xs">
-                              {item.petugas?.email || '-'}
+                              {item.nama_dinas || '-'}
                             </p>
                           </div>
                         </td>

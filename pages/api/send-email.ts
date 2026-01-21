@@ -41,7 +41,9 @@ export default async function handler(
       laporanJudul,
       laporanDeskripsi,
       petugasNama,
-      catatanPetugas
+      catatanPetugas,
+      laporan_foto,
+      laporan_bukti
     } = req.body
 
     // Validation
@@ -144,6 +146,56 @@ export default async function handler(
               font-weight: bold; 
               margin-top: 10px; 
             }
+            .photo-section {
+              margin-bottom: 25px;
+            }
+            .photo-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 15px;
+              margin-top: 15px;
+            }
+            .photo-card {
+              background: white;
+              border-radius: 8px;
+              overflow: hidden;
+              border: 2px solid #E5E7EB;
+            }
+            .photo-label {
+              background: #F0F9FF;
+              padding: 10px;
+              font-weight: bold;
+              color: #3E1C96;
+              font-size: 13px;
+              text-align: center;
+              border-bottom: 1px solid #E5E7EB;
+            }
+            .photo-image {
+              width: 100%;
+              height: 200px;
+              object-fit: cover;
+              display: block;
+            }
+            .no-photo {
+              width: 100%;
+              height: 200px;
+              background: #F3F4F6;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              color: #999;
+              font-size: 13px;
+              font-style: italic;
+            }
+            .comparison-note {
+              background: #DBEAFE;
+              border-left: 4px solid #0284C7;
+              padding: 12px;
+              border-radius: 4px;
+              margin-top: 12px;
+              font-size: 13px;
+              color: #0C4A6E;
+            }
           </style>
         </head>
         <body>
@@ -179,6 +231,31 @@ export default async function handler(
                     <div class="value">${petugasNama || 'Tim Support'}</div>
                   </div>
                 </div>
+
+                ${(laporan_foto || laporan_bukti) ? `
+                <div class="photo-section">
+                  <div class="section-title">📸 Dokumentasi Hasil Pekerjaan</div>
+                  <div class="photo-grid">
+                    <div class="photo-card">
+                      <div class="photo-label">📷 Foto Sebelum</div>
+                      ${laporan_foto 
+                        ? `<img src="${laporan_foto}" alt="Foto Sebelum" class="photo-image">` 
+                        : `<div class="no-photo">Tidak ada foto</div>`
+                      }
+                    </div>
+                    <div class="photo-card">
+                      <div class="photo-label">✅ Foto Sesudah</div>
+                      ${laporan_bukti 
+                        ? `<img src="${laporan_bukti}" alt="Foto Sesudah" class="photo-image">` 
+                        : `<div class="no-photo">Belum ada foto</div>`
+                      }
+                    </div>
+                  </div>
+                  <div class="comparison-note">
+                    📌 Kedua foto di atas menunjukkan kondisi sebelum dan sesudah penanganan masalah Anda
+                  </div>
+                </div>
+                ` : ''}
 
                 <div class="section">
                   <div class="section-title">💬 Hasil Penanganan & Catatan</div>

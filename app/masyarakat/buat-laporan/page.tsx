@@ -1,61 +1,271 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Navbar from '@/components/Navbar'
-import { supabase } from '@/lib/supabase'
-import dynamic from 'next/dynamic'
-import { Loader2, CheckCircle, AlertCircle, Upload, MapPin, FileText, Image } from 'lucide-react'
 import Footer from '@/components/Footer'
+import { supabase } from '@/lib/supabase'
+import { classifyLaporan } from '@/lib/aiClassifier'
+import { Loader2, CheckCircle, AlertCircle, Upload, MapPin, FileText, XCircle, Send, ImageIcon, Tag, AlertTriangle, Search, Navigation } from 'lucide-react'
 
-const MapContainer = dynamic(() => import('@/components/Map'), { ssr: false })
+// --- Helper Functions ---
+
+const isInsideBandung = (lat: number, lng: number): boolean => {
+  const bandungBounds = {
+    north: -6.8,
+    south: -7.1,
+    east: 107.75,
+    west: 107.45
+  }
+  
+  return (
+    lat <= bandungBounds.north &&
+    lat >= bandungBounds.south &&
+    lng <= bandungBounds.east &&
+    lng >= bandungBounds.west
+  )
+}
+
+const getAddressFromCoordinates = async (lat: number, lng: number): Promise<string> => {
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+      {
+        headers: {
+          'User-Agent': 'LaporanMasyarakat/1.0'
+        }
+      }
+    )
+    
+    if (!response.ok) throw new Error('Gagal mendapatkan alamat')
+    
+    const data = await response.json()
+    return data.display_name || 'Alamat tidak ditemukan'
+  } catch (error) {
+    console.error('Error getting address:', error)
+    return 'Gagal mendapatkan alamat'
+  }
+}
+
+// Search Location Component
+const LocationSearch = ({ onSelectLocation }: { onSelectLocation: (lat: number, lng: number) => void }) => {
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searching, setSearching] = useState(false)
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return
+    
+    setSearching(true)
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery + ', Bandung')}&limit=5`,
+        {
+          headers: {
+            'User-Agent': 'LaporanMasyarakat/1.0'
+          }
+        }
+      )
+      
+      const data = await response.json()
+      setSearchResults(data)
+    } catch (error) {
+      console.error('Search error:', error)
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+          placeholder="Cari alamat di Bandung..."
+          className="text-black flex-1 px-4 py-2.5 border-2 border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-[#3E1C96] focus:border-[#3E1C96]"
+        />
+        <button
+          type="button"
+          onClick={handleSearch}
+          disabled={searching}
+          className="px-4 py-2.5 bg-[#3E1C96] text-white rounded-xl hover:bg-[#5429CC] transition-colors flex items-center gap-2"
+        >
+          {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+        </button>
+      </div>
+      
+      {searchResults.length > 0 && (
+        <div className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden max-h-48 overflow-y-auto">
+          {searchResults.map((result, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => {
+                onSelectLocation(parseFloat(result.lat), parseFloat(result.lon))
+                setSearchResults([])
+                setSearchQuery('')
+              }}
+              className="w-full px-4 py-3 text-left hover:bg-purple-50 border-b border-gray-100 last:border-0 transition-colors"
+            >
+              <p className="text-sm font-medium text-gray-900">{result.display_name}</p>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Mock Map Component
+const MapContainer = ({ setLokasi, currentLocation }: { setLokasi: (loc: { lat: number; lng: number }) => void, currentLocation: { lat: number; lng: number } | null }) => {
+  const handleMapClick = () => {
+    setLokasi({ lat: -6.9175, lng: 107.6191 })
+  }
+
+  return (
+    <div 
+      onClick={handleMapClick}
+      className="w-full h-full bg-gradient-to-br from-blue-100 to-green-100 flex items-center justify-center cursor-pointer hover:opacity-90 transition-opacity relative"
+    >
+      {currentLocation ? (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center mx-auto mb-2 animate-pulse">
+              <MapPin className="w-10 h-10 text-white" />
+            </div>
+            <p className="text-sm font-bold text-gray-700">Lokasi Dipilih</p>
+            <p className="text-xs text-gray-500 mt-1">Lat: {currentLocation.lat.toFixed(4)}, Lng: {currentLocation.lng.toFixed(4)}</p>
+          </div>
+        </div>
+      ) : (
+        <div className="text-center">
+          <MapPin className="w-12 h-12 text-red-500 mx-auto mb-2" />
+          <p className="text-sm text-gray-600 font-medium">Klik untuk pilih lokasi</p>
+          <p className="text-xs text-gray-500 mt-1">(Demo: akan set lokasi Bandung)</p>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function BuatLaporanPage() {
   const [judul, setJudul] = useState('')
   const [deskripsi, setDeskripsi] = useState('')
+  const [kategori, setKategori] = useState('Umum')
+  const [urgensi, setUrgensi] = useState('sedang')
   const [foto, setFoto] = useState<File | null>(null)
   const [fotoPreview, setFotoPreview] = useState<string | null>(null)
   const [lokasi, setLokasi] = useState<{ lat: number; lng: number } | null>(null)
+  const [alamat, setAlamat] = useState<string>('')
+  const [loadingAlamat, setLoadingAlamat] = useState(false)
+  const [lokasiValid, setLokasiValid] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState('')
   const [error, setError] = useState('')
+  const [masyarakatId, setMasyarakatId] = useState<string>('')
+  const [gettingLocation, setGettingLocation] = useState(false)
+
+  const addDebugLog = (message: string) => {
+    console.log('🔍 DEBUG:', message)
+  }
+
+  // Auth Check
+  useEffect(() => {
+    const checkAuth = async () => {
+      addDebugLog('Checking authentication...')
+      
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
+      
+      if (authError || !authUser) {
+        addDebugLog('No auth user found')
+        setError('⚠️ Anda harus login terlebih dahulu')
+        setTimeout(() => {
+          window.location.href = '/login'
+        }, 2000)
+        return
+      }
+
+      const { data: masyarakatData, error: dbError } = await supabase
+        .from('masyarakat')
+        .select('id_masyarakat')
+        .eq('email', authUser.email)
+        .single()
+
+      if (dbError || !masyarakatData) {
+         addDebugLog(`❌ Failed to fetch profile: ${dbError?.message}`)
+         setError('Profil masyarakat tidak ditemukan. Silakan login ulang.')
+         return
+      }
+
+      setMasyarakatId(masyarakatData.id_masyarakat)
+      addDebugLog(`✅ User ID set: ${masyarakatData.id_masyarakat}`)
+    }
+
+    checkAuth()
+  }, [])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null
-    setFoto(file)
     
     if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setFotoPreview(reader.result as string)
+      if (file.size > 5 * 1024 * 1024) {
+        setError('Ukuran file maksimal 5MB')
+        return
       }
+      if (!file.type.startsWith('image/')) {
+        setError('File harus berupa gambar')
+        return
+      }
+
+      setFoto(file)
+      const reader = new FileReader()
+      reader.onloadend = () => setFotoPreview(reader.result as string)
       reader.readAsDataURL(file)
     } else {
+      setFoto(null)
       setFotoPreview(null)
     }
   }
 
-  const sendEmailNotification = async (email: string, nama: string, laporanJudul: string, laporanDeskripsi: string, laporanId: string) => {
-    try {
-      const response = await fetch('/api/send-email-laporan', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          to: email,
-          userName: nama,
-          laporanJudul,
-          laporanDeskripsi,
-          laporanId
-        })
-      })
-
-      if (!response.ok) {
-        console.warn('Email notification failed, but laporan was submitted')
-      }
-    } catch (err) {
-      console.warn('Email sending failed:', err)
+  const handleLokasiChange = async (newLokasi: { lat: number; lng: number }) => {
+    setLokasi(newLokasi)
+    setLoadingAlamat(true)
+    setAlamat('')
+    
+    const isValid = isInsideBandung(newLokasi.lat, newLokasi.lng)
+    setLokasiValid(isValid)
+    
+    if (isValid) {
+      setError('')
+      const address = await getAddressFromCoordinates(newLokasi.lat, newLokasi.lng)
+      setAlamat(address)
+    } else {
+      setError('⚠️ Lokasi luar Bandung. Silakan pilih lokasi di dalam Kota Bandung.')
     }
+    setLoadingAlamat(false)
+  }
+
+  const handleGetCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setError('Geolocation tidak didukung di browser Anda')
+      return
+    }
+
+    setGettingLocation(true)
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords
+        handleLokasiChange({ lat: latitude, lng: longitude })
+        setGettingLocation(false)
+      },
+      (error) => {
+        console.error('Geolocation error:', error)
+        setError('Gagal mendapatkan lokasi. Pastikan izin lokasi diaktifkan.')
+        setGettingLocation(false)
+      }
+    )
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -65,99 +275,125 @@ export default function BuatLaporanPage() {
     setSuccess('')
 
     try {
-      // Validasi input
-      if (!judul.trim() || !deskripsi.trim()) {
-        setError('Judul dan deskripsi harus diisi!')
-        setLoading(false)
-        return
-      }
+      if (!masyarakatId) throw new Error('Sesi tidak valid. Silakan refresh halaman.')
+      if (!lokasi || !lokasiValid) throw new Error('Lokasi harus dipilih dan valid.')
 
-      // Get user dari auth
-      const { data: userData } = await supabase.auth.getUser()
-      const userId = userData?.user?.id
+      addDebugLog('=== SUBMIT STARTED ===')
 
-      if (!userId) {
-        setError("Kamu belum login. Silakan login terlebih dahulu.")
-        setLoading(false)
-        return
-      }
-
-      // Get user email dan nama
-      const { data: userDataFromDB } = await supabase
-        .from('users')
-        .select('email, nama')
-        .eq('id', userId)
-        .single()
-
-      if (!userDataFromDB?.email) {
-        setError("Email user tidak ditemukan")
-        setLoading(false)
-        return
-      }
-
-      let fotoUrl = null
-
-      // Upload foto jika ada
+      let fotoUrls: string[] = []
       if (foto) {
-        const fileName = `${Date.now()}-${foto.name.replace(/\s+/g, '-')}`
-        const { data, error: uploadError } = await supabase.storage
-          .from('laporan-foto')
-          .upload(fileName, foto, {
-            cacheControl: '3600',
-            upsert: false
-          })
+        addDebugLog('📸 Uploading photo...')
+        const fileExt = foto.name.split('.').pop()
+        const fileName = `${masyarakatId}-${Date.now()}.${fileExt}`
+        
+        const { error: uploadError } = await supabase.storage
+          .from('laporan_foto')
+          .upload(fileName, foto)
 
         if (uploadError) throw new Error(`Gagal upload foto: ${uploadError.message}`)
 
-        const { data: publicUrl } = supabase.storage
-          .from('laporan-foto')
+        const { data: publicUrlData } = supabase.storage
+          .from('laporan_foto')
           .getPublicUrl(fileName)
-
-        fotoUrl = publicUrl.publicUrl
+          
+        fotoUrls.push(publicUrlData.publicUrl)
+        addDebugLog('✅ Photo uploaded')
       }
 
-      // Insert laporan
-      const { data: laporanData, error: insertError } = await supabase
+      addDebugLog('🤖 Running AI Classification...')
+      const aiResult = classifyLaporan({
+        judul: judul.trim(),
+        deskripsi: deskripsi.trim(),
+        kategori: kategori,
+        lokasi: alamat,
+        urgensi: urgensi
+      })
+
+      const isHighConfidence = aiResult.primary_dinas && aiResult.primary_dinas.confidence >= 70
+      addDebugLog(`📊 AI Confidence: ${aiResult.primary_dinas?.confidence || 0}% (${isHighConfidence ? 'HIGH' : 'LOW'})`)
+
+      const laporanStatus = isHighConfidence ? 'diproses' : 'baru'
+
+      const parentLaporanPayload = {
+        id_masyarakat: masyarakatId,
+        judul: judul.trim(),
+        deskripsi: deskripsi.trim(),
+        kategori_laporan: kategori,
+        urgensi_laporan: urgensi,
+        lokasi: alamat,
+        latitude: lokasi.lat,
+        longitude: lokasi.lng,
+        laporan_foto: fotoUrls,
+        status: laporanStatus,
+        confidence: aiResult.primary_dinas?.confidence || 0,
+        ai_reasoning: aiResult.reasoning.join('\n'),
+        sumber_keputusan: 'ai',
+        ai_recommendation: aiResult.primary_dinas?.name
+      }
+
+      const { data: insertedParent, error: parentError } = await supabase
         .from('laporan')
-        .insert([
-          {
-            judul,
-            deskripsi,
-            latitude: lokasi?.lat,
-            longitude: lokasi?.lng,
-            laporan_foto: fotoUrl,
-            user_id: userId,
-            status: 'menunggu'
-          }
-        ])
+        .insert(parentLaporanPayload)
         .select()
+        .single()
 
-      if (insertError) throw insertError
+      if (parentError) throw new Error(`Database Error: ${parentError.message}`)
+      addDebugLog(`✅ Laporan Induk Created: ID ${insertedParent.id_laporan}`)
 
-      const laporanId = laporanData?.[0]?.id || 'N/A'
+      if (isHighConfidence && aiResult.primary_dinas) {
+        addDebugLog('⚡ Executing Auto-Assign to Dinas...')
+        
+        const dinasInserts = []
 
-      // Send email notification (async, tidak perlu tunggu)
-      sendEmailNotification(
-        userDataFromDB.email,
-        userDataFromDB.nama || 'Pengguna',
-        judul,
-        deskripsi,
-        laporanId
-      )
+        dinasInserts.push({
+          id_laporan: insertedParent.id_laporan,
+          id_dinas: aiResult.primary_dinas.id,
+          status_dinas: 'menunggu_assign',
+          catatan_dinas: `[AUTO AI] Primary Assignment. Confidence: ${aiResult.primary_dinas.confidence}%`
+        })
 
-      setSuccess('✓ Laporan berhasil dikirim! Email konfirmasi telah dikirim ke email Anda.')
-      setJudul('')
-      setDeskripsi('')
-      setFoto(null)
-      setFotoPreview(null)
-      setLokasi(null)
+        aiResult.related_dinas.forEach(d => {
+           dinasInserts.push({
+             id_laporan: insertedParent.id_laporan,
+             id_dinas: d.id,
+             status_dinas: 'menunggu_assign',
+             catatan_dinas: `[AUTO AI] Related/Support Agency. Confidence: ${d.confidence}%`
+           })
+        })
 
-      // Redirect ke halaman laporan setelah 3 detik
+        const { error: childError } = await supabase
+          .from('laporan_dinas')
+          .insert(dinasInserts)
+
+        if (childError) {
+           addDebugLog(`⚠️ Failed to insert dinas records: ${childError.message}`)
+        } else {
+           addDebugLog(`✅ Assigned to ${dinasInserts.length} agencies.`)
+        }
+      } else {
+        addDebugLog('⚠️ Low Confidence. Waiting for Admin Manual Assignment.')
+      }
+
+      const successMsg = isHighConfidence
+        ? `✅ Laporan Berhasil Dikirim!\n\n🤖 AI mendeteksi & meneruskan ke:\n🎯 ${aiResult.primary_dinas?.name}\n${aiResult.related_dinas.length > 0 ? `➕ ${aiResult.related_dinas.length} Dinas Terkait` : ''}`
+        : `✅ Laporan Berhasil Dikirim!\n\n⚠️ Laporan Anda menunggu verifikasi admin untuk penentuan dinas terkait.`
+
+      setSuccess(successMsg)
+      
       setTimeout(() => {
-        window.location.href = '/masyarakat/buat-laporan'
-      }, 3000)
+        setJudul('')
+        setDeskripsi('')
+        setFoto(null)
+        setFotoPreview(null)
+        setLokasi(null)
+        setAlamat('')
+        setLokasiValid(null)
+      }, 4000)
+
     } catch (err: any) {
-      setError(err.message || 'Terjadi kesalahan saat mengirim laporan')
+      console.error(err)
+      setError(err.message || 'Terjadi kesalahan sistem')
+      addDebugLog(`❌ ERROR: ${err.message}`)
     } finally {
       setLoading(false)
     }
@@ -166,165 +402,159 @@ export default function BuatLaporanPage() {
   return (
     <>
       <Navbar />
-      <div className="min-h-screen bg-gradient-to-br from-[#FDF7EE] via-[#f8f4ff] to-[#FDF7EE] pt-24 pb-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto">
-          {/* Header Section */}
-          <div className="text-center mb-8">
-            <h1 className="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#3E1C96] to-[#F04438] mb-3">
-              Buat Laporan Disini
-            </h1>
-            <p className="text-gray-600 text-lg">
-              Laporkan masalah di sekitarmu untuk lingkungan yang lebih baik
-            </p>
+      <div className="min-h-screen bg-gradient-to-br from-[#FDF7EE] via-[#f8f4ff] to-[#FDF7EE] pt-20">
+        
+        {/* Header */}
+        <div className="bg-gradient-to-br from-[#3E1C96] via-[#5429CC] to-[#6B35E8] text-white">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-white/10 rounded-2xl backdrop-blur-sm mb-4">
+              <FileText className="w-8 h-8" />
+            </div>
+            <h1 className="text-3xl md:text-4xl font-bold mb-3">Buat Laporan Baru</h1>
+            <p className="text-purple-100 text-base max-w-2xl mx-auto">Sampaikan keluhan atau laporan Anda. Kami akan segera menindaklanjuti.</p>
+            <div className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-white/10 rounded-lg backdrop-blur-sm">
+              <MapPin className="w-4 h-4 text-red-300" />
+              <span className="text-sm font-medium">Khusus wilayah Kota Bandung</span>
+            </div>
           </div>
+        </div>
 
-          <div className="bg-white/90 backdrop-blur-xl border-2 border-gray-100 p-8 md:p-10 rounded-3xl shadow-2xl space-y-8">
-            {/* Success Alert */}
-            {success && (
-              <div className="flex items-center gap-3 p-4 rounded-xl bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border-2 border-green-200 shadow-sm animate-fade-in">
-                <CheckCircle className="w-6 h-6 flex-shrink-0" />
-                <span className="font-medium">{success}</span>
-              </div>
-            )}
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-            {/* Error Alert */}
-            {error && (
-              <div className="flex items-center gap-3 p-4 rounded-xl bg-gradient-to-r from-red-50 to-rose-50 text-red-700 border-2 border-red-200 shadow-sm">
-                <AlertCircle className="w-6 h-6 flex-shrink-0" />
-                <span className="font-medium">{error}</span>
-              </div>
-            )}
-
-            {/* Judul Input */}
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                <FileText className="w-4 h-4 text-[#3E1C96]" />
-                Judul Laporan *
-              </label>
-              <input
-                type="text"
-                value={judul}
-                onChange={(e) => setJudul(e.target.value)}
-                placeholder="Contoh: Jalan berlubang di depan sekolah"
-                className="text-black w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#3E1C96] focus:border-[#3E1C96] outline-none text-sm transition-all bg-white hover:border-gray-300"
-                required
-              />
+          {/* Feedback Messages */}
+          {success && (
+            <div className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-green-50 border-2 border-green-200 shadow-sm animate-pulse">
+              <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
+              <p className="text-sm text-green-800 font-semibold whitespace-pre-line">{success}</p>
             </div>
+          )}
 
-            {/* Deskripsi Textarea */}
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                <FileText className="w-4 h-4 text-[#3E1C96]" />
-                Deskripsi Lengkap *
-              </label>
-              <textarea
-                value={deskripsi}
-                onChange={(e) => setDeskripsi(e.target.value)}
-                rows={5}
-                placeholder="Jelaskan masalah secara detail..."
-                className="text-black w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#3E1C96] focus:border-[#3E1C96] outline-none text-sm transition-all resize-none bg-white hover:border-gray-300"
-                required
-              />
+          {error && (
+            <div className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-red-50 border-2 border-red-200 shadow-sm">
+              <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
+              <p className="text-sm text-red-800 font-semibold">{error}</p>
             </div>
+          )}
 
-            {/* Upload Foto */}
-            <div className="space-y-3">
-              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                <Image className="w-4 h-4 text-[#3E1C96]" />
-                Upload Foto (Opsional)
-              </label>
+          {/* Form */}
+          <div onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+            <div className="divide-y divide-gray-100">
               
-              <div className="relative">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileChange}
-                  className="hidden"
-                  id="file-upload"
-                />
-                <label
-                  htmlFor="file-upload"
-                  className="flex items-center justify-center gap-3 w-full px-6 py-4 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-[#3E1C96] hover:bg-purple-50/50 transition-all group"
-                >
-                  <Upload className="w-5 h-5 text-gray-400 group-hover:text-[#3E1C96] transition-colors" />
-                  <span className="text-sm text-gray-600 group-hover:text-[#3E1C96] font-medium transition-colors">
-                    {foto ? foto.name : 'Klik untuk upload gambar'}
-                  </span>
+              {/* Judul */}
+              <div className="p-6">
+                <label className="flex items-center gap-2 text-sm font-bold text-gray-900 mb-3">
+                  <FileText className="w-4 h-4 text-[#3E1C96]" /> Judul Laporan <span className="text-red-500">*</span>
                 </label>
+                <input type="text" value={judul} onChange={(e) => setJudul(e.target.value)} placeholder="Contoh: Jalan berlubang di depan sekolah" className="w-full px-4 py-3.5 border-2 rounded-xl focus:ring-2 focus:ring-[#3E1C96] focus:border-[#3E1C96] text-black text-sm" required />
               </div>
 
-              {/* Image Preview */}
-              {fotoPreview && (
-                <div className="relative group">
-                  <img
-                    src={fotoPreview}
-                    alt="Preview"
-                    className="w-full h-64 object-cover rounded-xl border-2 border-purple-200 shadow-lg"
-                  />
+              {/* Kategori & Urgensi */}
+              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-bold text-gray-900 mb-3"><Tag className="w-4 h-4 text-[#3E1C96]" /> Kategori</label>
+                  <select value={kategori} onChange={(e) => setKategori(e.target.value)} className="w-full px-4 py-3.5 border-2 rounded-xl bg-white text-black text-sm">
+                    {['Umum', 'Infrastruktur', 'Kebersihan', 'Keamanan', 'Lingkungan', 'Kesehatan', 'Transportasi', 'Sosial', 'Pendidikan', 'Lainnya'].map(k => (
+                       <option key={k} value={k}>{k}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-bold text-gray-900 mb-3"><AlertTriangle className="w-4 h-4 text-[#3E1C96]" /> Urgensi</label>
+                  <select value={urgensi} onChange={(e) => setUrgensi(e.target.value)} className="w-full px-4 py-3.5 border-2 rounded-xl bg-white text-black text-sm">
+                    <option value="rendah">🟢 Rendah</option>
+                    <option value="sedang">🟡 Sedang</option>
+                    <option value="tinggi">🔴 Tinggi</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Deskripsi */}
+              <div className="p-6">
+                <label className="flex items-center gap-2 text-sm font-bold text-gray-900 mb-3"><FileText className="w-4 h-4 text-[#3E1C96]" /> Deskripsi Lengkap <span className="text-red-500">*</span></label>
+                <textarea value={deskripsi} onChange={(e) => setDeskripsi(e.target.value)} rows={5} placeholder="Jelaskan masalah secara detail..." className="w-full px-4 py-3.5 border-2 rounded-xl text-black text-sm" required minLength={20} />
+                <div className="flex justify-between mt-2">
+                   <p className="text-xs text-gray-500">Min 20 karakter.</p>
+                   <p className={`text-xs font-semibold ${deskripsi.length >= 20 ? 'text-green-600' : 'text-gray-400'}`}>{deskripsi.length}/20</p>
+                </div>
+              </div>
+
+              {/* Foto */}
+              <div className="p-6">
+                <label className="flex items-center gap-2 text-sm font-bold text-gray-900 mb-3"><ImageIcon className="w-4 h-4 text-[#3E1C96]" /> Upload Foto <span className="text-gray-400 font-normal">(Opsional)</span></label>
+                {!fotoPreview ? (
+                  <>
+                    <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" id="file-upload" />
+                    <label htmlFor="file-upload" className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-[#3E1C96] hover:bg-purple-50/30 transition-all">
+                      <Upload className="w-6 h-6 text-gray-400 mb-2" />
+                      <p className="text-sm font-semibold text-gray-700">Klik untuk upload gambar</p>
+                    </label>
+                  </>
+                ) : (
+                  <div className="relative rounded-xl overflow-hidden border-2 shadow-lg">
+                    <img src={fotoPreview} alt="Preview" className="w-full h-64 object-cover" />
+                    <button type="button" onClick={() => { setFoto(null); setFotoPreview(null); }} className="absolute top-3 right-3 p-2 bg-red-500 text-white rounded-lg hover:bg-red-600"><XCircle className="w-5 h-5" /></button>
+                  </div>
+                )}
+              </div>
+
+              {/* Lokasi */}
+              <div className="p-6">
+                <label className="flex items-center gap-2 text-sm font-bold text-gray-900 mb-4"><MapPin className="w-4 h-4 text-[#3E1C96]" /> Pilih Lokasi <span className="text-red-500">*</span></label>
+                
+                {/* Location Options */}
+                <div className="mb-4 flex flex-col sm:flex-row gap-3">
                   <button
                     type="button"
-                    onClick={() => {
-                      setFoto(null)
-                      setFotoPreview(null)
-                      const fileInput = document.getElementById('file-upload') as HTMLInputElement
-                      if (fileInput) fileInput.value = ''
-                    }}
-                    className="absolute top-3 right-3 bg-red-500 text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-red-600 transition-colors shadow-lg"
+                    onClick={handleGetCurrentLocation}
+                    disabled={gettingLocation}
+                    className="flex-1 px-4 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors flex items-center justify-center gap-2 font-semibold"
                   >
-                    ✕
+                    {gettingLocation ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> Mendapatkan Lokasi...</>
+                    ) : (
+                      <><Navigation className="w-4 h-4" /> Gunakan Lokasi Saat Ini</>
+                    )}
                   </button>
                 </div>
-              )}
-            </div>
 
-            {/* Map Location */}
-            <div className="space-y-3">
-              <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                <MapPin className="w-4 h-4 text-red-500" />
-                Tentukan Lokasi
-              </label>
-              <div className="rounded-xl overflow-hidden border-2 border-gray-200 shadow-md h-80">
-                <MapContainer setLokasi={setLokasi} />
-              </div>
-              {lokasi && (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200">
-                  <MapPin className="w-4 h-4 text-red-500 flex-shrink-0" />
-                  <p className="text-sm text-gray-700">
-                    <span className="font-semibold">Lokasi dipilih:</span>{' '}
-                    <span className="font-mono text-xs">{lokasi.lat.toFixed(6)}, {lokasi.lng.toFixed(6)}</span>
-                  </p>
+                {/* Search Location */}
+                <LocationSearch onSelectLocation={(lat, lng) => handleLokasiChange({ lat, lng })} />
+
+                {/* Map */}
+                <div className="rounded-xl overflow-hidden border-2 h-80 my-4 shadow-lg">
+                   <MapContainer setLokasi={handleLokasiChange} currentLocation={lokasi} />
                 </div>
-              )}
+                
+                {loadingAlamat && <div className="p-3 bg-blue-50 text-blue-700 rounded-lg flex items-center gap-2"><Loader2 className="animate-spin w-4 h-4"/> Mencari alamat...</div>}
+                
+                {lokasi && lokasiValid && !loadingAlamat && (
+                   <div className="p-4 bg-green-50 border border-green-200 rounded-xl">
+                      <p className="text-sm font-bold text-green-800 mb-1">✅ Lokasi Valid</p>
+                      <p className="text-xs text-gray-600">{alamat}</p>
+                   </div>
+                )}
+                
+                {lokasi && lokasiValid === false && (
+                   <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
+                      <p className="text-sm font-bold text-red-800">❌ Lokasi di luar Bandung</p>
+                   </div>
+                )}
+              </div>
+
+              {/* Submit */}
+              <div className="p-6 bg-gray-50">
+                <button 
+                  type="submit"
+                  onClick={handleSubmit}
+                  disabled={loading || !lokasiValid || !masyarakatId} 
+                  className="w-full py-4 px-6 rounded-xl font-bold text-white bg-gradient-to-r from-[#3E1C96] to-[#5429CC] hover:shadow-xl hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 transition-all flex items-center justify-center gap-3"
+                >
+                  {loading ? <><Loader2 className="animate-spin" /> Mengirim...</> : <><Send className="w-5 h-5" /> Kirim Laporan</>}
+                </button>
+                <p className="text-xs text-center text-gray-500 mt-4">🔒 Laporan diproses otomatis oleh sistem AI & diteruskan ke dinas terkait.</p>
+              </div>
+
             </div>
-
-            {/* Submit Button */}
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={loading}
-              className="w-full py-4 rounded-xl font-bold text-white text-lg
-                       bg-gradient-to-r from-[#3E1C96] via-[#5B2CB8] to-[#F04438] 
-                       hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]
-                       disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100
-                       transition-all duration-200 flex items-center justify-center gap-3"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-6 h-6 animate-spin" />
-                  <span>Mengirim Laporan...</span>
-                </>
-              ) : (
-                <>
-                  <Upload className="w-5 h-5" />
-                  <span>Kirim Laporan</span>
-                </>
-              )}
-            </button>
-
-            {/* Info Text */}
-            <p className="text-xs text-center text-gray-500 mt-4">
-              Laporan kamu akan diverifikasi oleh admin dan akan segera ditindaklanjuti. Email konfirmasi akan dikirim ke email terdaftar Anda.
-            </p>
           </div>
         </div>
       </div>

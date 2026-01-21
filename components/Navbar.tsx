@@ -3,12 +3,14 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { Menu, X, LogOut, Settings, ChevronDown } from 'lucide-react'
+import { Menu, X, LogOut, Settings, ChevronDown, Building2 } from 'lucide-react'
 
 type User = {
-  name: string
-  role: 'masyarakat' | 'petugas' | 'admin'
+  nama: string
+  role: 'masyarakat' | 'petugas' | 'admin' | 'dinas'
   avatar?: string
+  id?: string
+  email?: string
 } | null
 
 export default function Navbar() {
@@ -36,8 +38,38 @@ export default function Navbar() {
 
   const isHomePage = pathname === '/'
 
-  const getInitial = (name?: string) =>
-    name ? name.charAt(0).toUpperCase() : 'U'
+  const getInitial = (nama?: string) =>
+    nama ? nama.charAt(0).toUpperCase() : 'U'
+
+  const getRoleBadgeColor = (role?: string) => {
+    switch (role) {
+      case 'admin':
+        return 'bg-red-500'
+      case 'dinas':
+        return 'bg-purple-500'
+      case 'petugas':
+        return 'bg-blue-500'
+      case 'masyarakat':
+        return 'bg-green-500'
+      default:
+        return 'bg-gray-500'
+    }
+  }
+
+  const getRoleLabel = (role?: string) => {
+    switch (role) {
+      case 'admin':
+        return 'Admin'
+      case 'dinas':
+        return 'Dinas'
+      case 'petugas':
+        return 'Petugas'
+      case 'masyarakat':
+        return 'Masyarakat'
+      default:
+        return 'User'
+    }
+  }
 
   return (
     <nav className="bg-yellow-400 text-blue-900 px-4 sm:px-6 py-4 flex justify-between items-center shadow-lg fixed top-0 left-0 right-0 z-50">
@@ -79,6 +111,9 @@ export default function Navbar() {
                   <Link href="/masyarakat/buat-laporan" className="hover:text-blue-700 transition font-medium">
                     Buat Laporan
                   </Link>
+                  <Link href="/masyarakat/feedback" className="hover:text-blue-700 transition font-medium">
+                    Feedback 
+                  </Link>
                   <Link href="/masyarakat/riwayat" className="hover:text-blue-700 transition font-medium">
                     Riwayat
                   </Link>
@@ -87,9 +122,9 @@ export default function Navbar() {
 
               {user.role === 'petugas' && (
                 <>
-                  <Link href="/petugas/dashboard-petugas" className="hover:text-blue-700 transition font-medium">
+                  {/* <Link href="/petugas/dashboard-petugas" className="hover:text-blue-700 transition font-medium">
                     Dashboard
-                  </Link>
+                  </Link> */}
                   <Link href="/petugas/tugas" className="hover:text-blue-700 transition font-medium">
                     Tugas Saya
                   </Link>
@@ -110,6 +145,30 @@ export default function Navbar() {
                   <Link href="/admin/manajemen-users" className="hover:text-blue-700 transition font-medium">
                     Akun
                   </Link>
+                  <Link href="/admin/feedback" className="hover:text-blue-700 transition font-medium">
+                    Feedback
+                  </Link>
+                                    <Link href="/admin/manajemen-dinas" className="hover:text-blue-700 transition font-medium">
+                    Manajemen Dinas
+                  </Link>
+
+                </>
+              )}
+
+              {user.role === 'dinas' && (
+                <>
+                  <Link href="/dinas/dashboard" className="hover:text-blue-700 transition font-medium">
+                    Dashboard
+                  </Link>
+                  <Link href="/dinas/laporan" className="hover:text-blue-700 transition font-medium">
+                    Laporan Masuk
+                  </Link>
+                  <Link href="/dinas/petugas" className="hover:text-blue-700 transition font-medium">
+                    Petugas
+                  </Link>
+                  <Link href="/dinas/statistik" className="hover:text-blue-700 transition font-medium">
+                    Statistik
+                  </Link>
                 </>
               )}
             </div>
@@ -121,28 +180,55 @@ export default function Navbar() {
                   onClick={() => setOpen(!open)}
                   className="flex items-center gap-2 hover:bg-yellow-300 px-3 py-2 rounded-lg transition"
                 >
-                  <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-blue-900 shadow">
-                    {user?.avatar ? (
-                      <img
-                        src={user.avatar}
-                        alt="User Avatar"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-orange-400 text-white font-semibold text-sm">
-                        {getInitial(user?.name)}
-                      </div>
-                    )}
+                  <div className="relative">
+                    <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-blue-900 shadow">
+                      {user?.avatar ? (
+                        <img
+                          src={user.avatar}
+                          alt="User Avatar"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className={`w-full h-full flex items-center justify-center ${getRoleBadgeColor(user?.role)} text-white font-semibold text-sm`}>
+                          {user.role === 'dinas' ? <Building2 size={16} /> : getInitial(user?.nama)}
+                        </div>
+                      )}
+                    </div>
+                    {/* Role Badge */}
+                    <div className={`absolute -bottom-1 -right-1 w-4 h-4 ${getRoleBadgeColor(user?.role)} rounded-full border-2 border-yellow-400 flex items-center justify-center`}>
+                      <span className="text-[8px] text-white font-bold">
+                        {user.role === 'admin' ? 'A' : 
+                         user.role === 'dinas' ? 'D' : 
+                         user.role === 'petugas' ? 'P' : 'M'}
+                      </span>
+                    </div>
                   </div>
-                  <span className="text-sm font-medium hidden sm:inline text-blue-900">{user?.name}</span>
+                  <div className="hidden sm:flex flex-col items-start">
+                    <span className="text-sm font-medium text-blue-900 leading-tight">{user?.nama}</span>
+                    <span className="text-xs text-blue-700 leading-tight">{getRoleLabel(user?.role)}</span>
+                  </div>
                   <ChevronDown size={16} className={`transition-transform text-blue-900 ${open ? 'rotate-180' : ''}`} />
                 </button>
 
                 {open && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white text-gray-800 shadow-xl rounded-xl overflow-hidden z-50 border border-gray-100">
+                  <div className="absolute right-0 mt-2 w-56 bg-white text-gray-800 shadow-xl rounded-xl overflow-hidden z-50 border border-gray-100">
+                    {/* User Info Header */}
+                    <div className="px-4 py-3 bg-gradient-to-r from-yellow-50 to-orange-50 border-b border-gray-100">
+                      <p className="text-sm font-semibold text-gray-800 truncate">{user?.nama}</p>
+                      <p className="text-xs text-gray-600 truncate">{user?.email || '-'}</p>
+                      <div className="mt-2">
+                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium text-white ${getRoleBadgeColor(user?.role)}`}>
+                          {user.role === 'dinas' && <Building2 size={12} />}
+                          {getRoleLabel(user?.role)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Menu Items */}
                     <Link
                       href="/edit-profile"
                       className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition text-sm font-medium border-b border-gray-100"
+                      onClick={() => setOpen(false)}
                     >
                       <Settings size={16} />
                       Profile Setting

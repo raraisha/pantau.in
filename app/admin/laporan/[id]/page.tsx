@@ -1,78 +1,95 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import { supabase } from '@/lib/supabase'
-import { Send, Loader2, AlertCircle, CheckCircle, User, Mail, ArrowLeft, MapPin, Calendar, FileText, Award, Image as ImageIcon } from 'lucide-react'
+import { 
+  ArrowLeft, MapPin, Calendar, User, Building2, 
+  CheckCircle, XCircle, AlertCircle, Loader2, 
+  FileText, Clock, Camera, MessageSquare 
+} from 'lucide-react'
+import 'leaflet/dist/leaflet.css'
 
-type Laporan = {
-  id: string
-  judul: string
-  deskripsi?: string
-  status: 'menunggu' | 'diproses' | 'selesai'
-  created_at: string
-  latitude?: number
-  longitude?: number
-  catatan_petugas?: string
-  petugas_id?: string
-  user_id?: string
-  laporan_foto?: string
-  laporan_bukti?: string
-  hasil_pekerjaan?: string
-  petugas?: {
-    id: string
-    nama: string
-    email: string
-  }
-  users?: {
-    id: string
-    nama: string
-    email: string
-  }
-}
-
-type Petugas = {
-  id: string
+// --- Types Sesuai Schema Kamu ---
+type Masyarakat = {
   nama: string
   email: string
+  telp: string
 }
 
-export default function KelolaMasaLaporan() {
-  const params = useParams()
-  const laporan_id = params.id as string
-  const mapRef = useRef<any>(null)
+type Dinas = {
+  nama_dinas: string
+}
 
-  const [laporan, setLaporan] = useState<Laporan | null>(null)
-  const [petugas, setPetugas] = useState<Petugas[]>([])
+type Pelaksanaan = {
+  foto_sesudah: string[] | null
+  deskripsi_tindakan: string
+  waktu_selesai: string
+}
+
+type LaporanDinas = {
+  id_laporan_dinas: string // Primary Key
+  status_dinas: string
+  catatan_dinas: string | null
+  dinas: Dinas
+  // Kita ambil bukti dari tabel pelaksanaan
+  pelaksanaan: Pelaksanaan[] 
+}
+
+type LaporanDetail = {
+  id_laporan: string
+  judul: string
+  deskripsi: string
+  kategori_laporan: string
+  status: string
+  lokasi: string
+  latitude: number
+  longitude: number
+  laporan_foto: string[] | null
+  created_at: string
+  masyarakat: Masyarakat // Relasi ke tabel masyarakat
+  laporan_dinas: LaporanDinas[] // Relasi ke tabel laporan_dinas
+}
+
+export default function DetailKelolaLaporan() {
+  const params = useParams()
+  const router = useRouter()
+  const id = params.id as string
+  const mapRef = useRef<HTMLDivElement>(null)
+  const mapInstance = useRef<any>(null)
+
+  const [laporan, setLaporan] = useState<LaporanDetail | null>(null)
   const [loading, setLoading] = useState(true)
-  const [selectedPetugas, setSelectedPetugas] = useState('')
-  const [assigning, setAssigning] = useState(false)
-  const [sending, setSending] = useState(false)
+  const [processingId, setProcessingId] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
+  // --- 1. Fetch Data ---
   useEffect(() => {
     fetchLaporanDetail()
-    fetchPetugas()
-  }, [laporan_id])
+  }, [id])
 
+  // --- 2. Load Map ---
   useEffect(() => {
-    if (laporan?.latitude && laporan?.longitude && mapRef.current) {
+    if (laporan && laporan.latitude && laporan.longitude && mapRef.current && !mapInstance.current) {
       const loadMap = async () => {
-        const L = await import('leaflet')
-        
-        if (mapRef.current._leaflet_id) {
-          mapRef.current._leaflet_map?.remove()
+        const L = (await import('leaflet')).default
+        if (mapInstance.current) {
+          mapInstance.current.remove()
+          mapInstance.current = null
         }
-
-        const map = L.map(mapRef.current).setView([laporan.latitude, laporan.longitude], 15)
+        mapInstance.current = L.map(mapRef.current!).setView([laporan.latitude, laporan.longitude], 15)
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '&copy; OpenStreetMap contributors',
-          maxZoom: 19
-        }).addTo(map)
-        L.marker([laporan.latitude, laporan.longitude]).addTo(map)
+          attribution: '© OpenStreetMap contributors'
+        }).addTo(mapInstance.current)
+        
+        const icon = L.divIcon({
+          className: 'bg-transparent',
+          html: `<div style="background-color: #3E1C96; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.3);"></div>`
+        })
+        L.marker([laporan.latitude, laporan.longitude], { icon }).addTo(mapInstance.current).bindPopup(laporan.lokasi)
       }
       loadMap()
     }
@@ -80,443 +97,296 @@ export default function KelolaMasaLaporan() {
 
   const fetchLaporanDetail = async () => {
     try {
+      setLoading(true)
+      
+      // QUERY DISESUAIKAN DENGAN SCHEMA DB KAMU
       const { data, error } = await supabase
         .from('laporan')
-        .select('*')
-        .eq('id', laporan_id)
+        .select(`
+          *,
+          masyarakat!fk_laporan_masyarakat (
+            nama,
+            email,
+            telp
+          ),
+          laporan_dinas (
+            id_laporan_dinas,
+            status_dinas,
+            catatan_dinas,
+            dinas (
+              nama_dinas
+            ),
+            pelaksanaan (
+              foto_sesudah,
+              deskripsi_tindakan,
+              waktu_selesai
+            )
+          )
+        `)
+        .eq('id_laporan', id)
         .single()
 
-      if (error) {
-        setError('Laporan tidak ditemukan')
-        setLoading(false)
-        return
+      if (error) throw error
+
+      // Formatting Data (Handling Arrays from Joins)
+      const formattedData = {
+        ...data,
+        masyarakat: Array.isArray(data.masyarakat) ? data.masyarakat[0] : data.masyarakat,
+        laporan_dinas: data.laporan_dinas?.map((ld: any) => ({
+          ...ld,
+          dinas: Array.isArray(ld.dinas) ? ld.dinas[0] : ld.dinas,
+          // Pelaksanaan bisa banyak jika banyak petugas, kita ambil semua untuk ditampilkan
+          pelaksanaan: ld.pelaksanaan || []
+        }))
       }
 
-      let petugasData = null
-      let userData = null
-
-      if (data?.petugas_id) {
-        const { data: p } = await supabase
-          .from('petugas')
-          .select('*')
-          .eq('id', data.petugas_id)
-          .single()
-        petugasData = p
-      }
-
-      if (data?.user_id) {
-        const { data: u } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', data.user_id)
-          .single()
-        userData = u
-      }
-
-      setLaporan({ ...data, petugas: petugasData, users: userData })
-    } catch (err) {
-      console.error(err)
-      setError('Terjadi kesalahan')
+      setLaporan(formattedData as any)
+    } catch (err: any) {
+      console.error('Error fetching:', err)
+      setError('Gagal memuat data: ' + err.message)
     } finally {
       setLoading(false)
     }
   }
 
-  const fetchPetugas = async () => {
-    try {
-      const { data } = await supabase.from('petugas').select('*').order('nama')
-      setPetugas(data || [])
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  const handleAssignPetugas = async () => {
-    if (!selectedPetugas) {
-      setError('Pilih petugas terlebih dahulu')
-      return
-    }
-    setAssigning(true)
+  // --- 3. LOGIKA VERIFIKASI ---
+  const handleVerifikasiDinas = async (idLaporanDinas: string, isApproved: boolean) => {
+    setProcessingId(idLaporanDinas)
     setError('')
     setSuccess('')
 
     try {
-      // Get data petugas yang dipilih
-      const petugasData = petugas.find(p => p.id === selectedPetugas)
-      
-      if (!petugasData) {
-        setError('Data petugas tidak ditemukan')
-        setAssigning(false)
-        return
-      }
+      const newStatus = isApproved ? 'selesai' : 'revisi'
+      const catatan = isApproved 
+        ? 'Disetujui oleh Admin Pusat.' 
+        : 'Ditolak oleh Admin Pusat. Mohon perbaiki.'
 
-      // Update status laporan
+      // Update status laporan_dinas
       const { error: updateError } = await supabase
-        .from('laporan')
-        .update({ petugas_id: selectedPetugas, status: 'diproses' })
-        .eq('id', laporan_id)
-
-      if (updateError) {
-        setError('Gagal assign petugas')
-        setAssigning(false)
-        return
-      }
-
-      // Kirim email notifikasi (async, tidak perlu tunggu)
-      if (petugasData.email && laporan?.users?.email) {
-        fetch('/api/send-email-assign', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            petugasEmail: petugasData.email,
-            petugasNama: petugasData.nama,
-            userEmail: laporan.users.email,
-            userName: laporan.users.nama,
-            laporanJudul: laporan.judul,
-            laporanDeskripsi: laporan.deskripsi,
-            laporanId: laporan_id
-          })
-        }).catch(err => console.warn('Email notification failed:', err))
-      }
-
-      setSuccess('Petugas berhasil di-assign! Email notifikasi telah dikirim.')
-      setSelectedPetugas('')
-      setTimeout(() => fetchLaporanDetail(), 1000)
-    } catch (err) {
-      console.error(err)
-      setError('Terjadi kesalahan')
-    } finally {
-      setAssigning(false)
-    }
-  }
-
-  const handleKirimEmail = async () => {
-    setSending(true)
-    setError('')
-    setSuccess('')
-
-    try {
-      const response = await fetch('/api/send-email', { 
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: laporan?.users?.email,
-          userName: laporan?.users?.nama,
-          laporanJudul: laporan?.judul,
-          laporanDeskripsi: laporan?.deskripsi,
-          petugasNama: laporan?.petugas?.nama,
-          catatanPetugas: laporan?.catatan_petugas
+        .from('laporan_dinas')
+        .update({ 
+          status_dinas: newStatus,
+          catatan_dinas: catatan
         })
-      })
+        .eq('id_laporan_dinas', idLaporanDinas) // Pakai id_laporan_dinas sesuai schema
 
-      if (!response.ok) {
-        setError('Gagal kirim email')
-        return
+      if (updateError) throw updateError
+
+      await fetchLaporanDetail()
+      
+      if (isApproved) {
+        await cekStatusUtamaOtomatis(laporan!.id_laporan)
       }
 
-      setSuccess('Email berhasil dikirim!')
-    } catch {
-      setError('Gagal mengirim email')
+      setSuccess(`Laporan dinas berhasil di-${isApproved ? 'terima' : 'kembalikan'}.`)
+    } catch (err: any) {
+      setError(err.message)
     } finally {
-      setSending(false)
+      setProcessingId(null)
     }
   }
 
-  const openInMaps = () => {
-    if (laporan?.latitude && laporan?.longitude) {
-      const url = `https://www.google.com/maps?q=${laporan.latitude},${laporan.longitude}`
-      window.open(url, '_blank')
+  const cekStatusUtamaOtomatis = async (idLaporan: string) => {
+    const { data: latestDinas } = await supabase
+      .from('laporan_dinas')
+      .select('status_dinas')
+      .eq('id_laporan', idLaporan)
+
+    if (latestDinas) {
+      const allFinished = latestDinas.every(item => item.status_dinas === 'selesai')
+      
+      if (allFinished) {
+        // Update Laporan Utama -> Selesai
+        const { error: mainError } = await supabase
+          .from('laporan')
+          .update({ 
+            status: 'selesai',
+            waktu_selesai: new Date().toISOString()
+          })
+          .eq('id_laporan', idLaporan)
+
+        if (!mainError && laporan?.masyarakat?.email) {
+          // Kirim Email (Asumsi API route sudah dibuat)
+          fetch('/api/send-email-selesai', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: laporan.masyarakat.email,
+              nama: laporan.masyarakat.nama,
+              judul: laporan.judul,
+              link: `https://lapor-bandung.go.id/laporan/${idLaporan}`
+            })
+          }).catch(console.error)
+          
+          setSuccess('🎉 SEMUA DINAS SELESAI! Laporan ditutup & Email terkirim.')
+          fetchLaporanDetail()
+        }
+      }
     }
   }
 
-  const formatDate = (date: string) =>
-    new Date(date).toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-
-  const getStatusConfig = (status: string) => {
-    switch (status) {
-      case 'menunggu':
-        return { bg: 'bg-gradient-to-r from-yellow-50 to-orange-50', border: 'border-yellow-200', text: 'text-yellow-800', badge: 'bg-yellow-100 text-yellow-700' }
-      case 'diproses':
-        return { bg: 'bg-gradient-to-r from-blue-50 to-cyan-50', border: 'border-blue-200', text: 'text-blue-800', badge: 'bg-blue-100 text-blue-700' }
-      case 'selesai':
-        return { bg: 'bg-gradient-to-r from-green-50 to-emerald-50', border: 'border-green-200', text: 'text-green-800', badge: 'bg-green-100 text-green-700' }
-      default:
-        return { bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-800', badge: 'bg-gray-100 text-gray-700' }
+  const getStatusBadge = (status: string) => {
+    // Mapping status enum DB ke warna
+    const styles: Record<string, string> = {
+      menunggu_assign: 'bg-gray-100 text-gray-600',
+      ditugaskan: 'bg-blue-50 text-blue-600',
+      sedang_dikerjakan: 'bg-purple-50 text-purple-600',
+      menunggu_verifikasi_admin: 'bg-orange-50 text-orange-600 border-orange-200 animate-pulse',
+      selesai: 'bg-green-50 text-green-600',
+      revisi: 'bg-red-50 text-red-600'
     }
+    return styles[status] || 'bg-gray-100'
   }
 
-  if (loading) {
-    return (
-      <>
-        <Navbar />
-        <div className="min-h-screen flex items-center justify-center pt-24 bg-gradient-to-br from-blue-50 to-indigo-100">
-          <div className="flex flex-col items-center gap-4">
-            <Loader2 className="w-16 h-16 animate-spin text-blue-600" />
-            <p className="text-gray-600 font-medium">Memuat laporan...</p>
-          </div>
-        </div>
-        <Footer />
-      </>
-    )
-  }
-
-  if (!laporan) {
-    return (
-      <>
-        <Navbar />
-        <div className="min-h-screen flex flex-col items-center justify-center pt-24 bg-gradient-to-br from-red-50 to-orange-100">
-          <AlertCircle className="w-20 h-20 text-red-500 mb-4" />
-          <h2 className="text-3xl font-bold text-gray-800">Laporan Tidak Ditemukan</h2>
-          <p className="text-gray-600 mt-2">Laporan yang Anda cari tidak tersedia</p>
-        </div>
-        <Footer />
-      </>
-    )
-  }
-
-  const statusConfig = getStatusConfig(laporan.status)
+  if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin" /></div>
+  if (!laporan) return <div className="min-h-screen flex items-center justify-center">Data tidak ditemukan</div>
 
   return (
     <>
       <Navbar />
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50 pt-24 pb-12 px-4">
+      <div className="min-h-screen bg-gray-50 pt-24 pb-12 px-4">
         <div className="max-w-7xl mx-auto">
-          <button onClick={() => window.history.back()} className="group flex items-center gap-2 text-blue-600 hover:text-blue-700 mb-6 font-semibold transition-all duration-200">
-            <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" /> Kembali
+          
+          <button onClick={() => router.back()} className="flex items-center gap-2 text-gray-500 hover:text-blue-600 mb-6">
+            <ArrowLeft className="w-5 h-5" /> Kembali
           </button>
 
-          {error && (
-            <div className="bg-red-50 border-2 border-red-200 text-red-700 px-5 py-4 rounded-xl mb-6 flex items-center gap-3 shadow-sm">
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <span className="font-medium">{error}</span>
-            </div>
-          )}
-          {success && (
-            <div className="bg-green-50 border-2 border-green-200 text-green-700 px-5 py-4 rounded-xl mb-6 flex items-center gap-3 shadow-sm">
-              <CheckCircle className="w-5 h-5 flex-shrink-0" />
-              <span className="font-medium">{success}</span>
-            </div>
-          )}
+          {/* Alert Success/Error */}
+          {error && <div className="bg-red-50 text-red-700 p-4 rounded-xl mb-6 flex gap-2"><XCircle/> {error}</div>}
+          {success && <div className="bg-green-50 text-green-700 p-4 rounded-xl mb-6 flex gap-2"><CheckCircle/> {success}</div>}
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 space-y-6">
-              <div className={`${statusConfig.bg} border-2 ${statusConfig.border} rounded-2xl p-6`}>
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h1 className={`text-3xl font-bold ${statusConfig.text} mb-2`}>{laporan.judul}</h1>
-                    <div className="flex items-center gap-2 text-gray-600">
-                      <Calendar className="w-4 h-4" />
-                      <p className="text-sm">{formatDate(laporan.created_at)}</p>
-                    </div>
-                  </div>
-                  <span className={`px-4 py-2 rounded-full font-bold text-xs ${statusConfig.badge} whitespace-nowrap`}>
-                    {laporan.status === 'menunggu' ? '⏳ Menunggu' : laporan.status === 'diproses' ? '⚙️ Diproses' : '✓ Selesai'}
-                  </span>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            {/* KOLOM KIRI: Detail & Dinas */}
+            <div className="lg:col-span-2 space-y-8">
+              
+              {/* Card Detail Utama */}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                <div className={`p-6 text-white bg-gradient-to-r ${laporan.status === 'selesai' ? 'from-green-600 to-emerald-600' : 'from-[#3E1C96] to-[#5B2CB8]'}`}>
+                  <h1 className="text-2xl font-bold">{laporan.judul}</h1>
+                  <p className="opacity-90 text-sm mt-1 flex gap-2 items-center">
+                    <Calendar className="w-4 h-4"/> {new Date(laporan.created_at).toLocaleDateString('id-ID')}
+                    <span className="bg-white/20 px-2 rounded font-bold uppercase">{laporan.kategori_laporan}</span>
+                  </p>
                 </div>
-              </div>
-
-              {laporan.laporan_foto && (
-                <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-                  <div className="flex items-center gap-3 mb-4">
-                    <ImageIcon className="w-6 h-6 text-blue-600" />
-                    <h3 className="text-lg font-bold text-gray-800">Foto Laporan</h3>
-                  </div>
-                  <div className="rounded-xl overflow-hidden shadow-lg border border-gray-200">
-                    <img src={laporan.laporan_foto} alt={laporan.judul} className="w-full h-64 object-cover" />
-                  </div>
-                </div>
-              )}
-
-              {laporan.laporan_bukti && (
-                <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-                  <div className="flex items-center gap-3 mb-4">
-                    <FileText className="w-6 h-6 text-purple-600" />
-                    <h3 className="text-lg font-bold text-gray-800">Bukti Laporan</h3>
-                  </div>
-                  <div className="rounded-xl overflow-hidden shadow-lg border border-gray-200">
-                    <img src={laporan.laporan_bukti} alt="Bukti Laporan" className="w-full h-64 object-cover" />
-                  </div>
-                </div>
-              )}
-
-              <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-                <div className="flex items-center gap-3 mb-4">
-                  <FileText className="w-6 h-6 text-blue-600" />
-                  <h3 className="text-lg font-bold text-gray-800">Deskripsi</h3>
-                </div>
-                <div className="bg-gradient-to-br from-gray-50 to-blue-50 p-5 rounded-xl border border-gray-200">
-                  <p className="text-gray-700 whitespace-pre-wrap leading-relaxed text-sm">{laporan.deskripsi || '-'}</p>
-                </div>
-              </div>
-
-              {laporan.status === 'selesai' && laporan.hasil_pekerjaan && (
-                <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-                  <div className="flex items-center gap-3 mb-4">
-                    <CheckCircle className="w-6 h-6 text-green-600" />
-                    <h3 className="text-lg font-bold text-gray-800">Hasil Pekerjaan</h3>
-                  </div>
-                  <div className="rounded-xl overflow-hidden shadow-lg border border-gray-200">
-                    <img src={laporan.hasil_pekerjaan} alt="Hasil Pekerjaan" className="w-full h-64 object-cover" />
-                  </div>
-                </div>
-              )}
-
-              {(laporan.latitude && laporan.longitude) && (
-                <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-                  <div className="flex items-center gap-3 mb-4">
-                    <MapPin className="w-6 h-6 text-blue-600" />
-                    <h3 className="text-lg font-bold text-gray-800">Lokasi Laporan</h3>
-                  </div>
-                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-4 rounded-xl border border-green-200 mb-4 flex justify-between items-center">
-                    <div>
-                      <p className="text-xs font-semibold text-gray-600 mb-1">Koordinat GPS</p>
-                      <p className="text-sm font-mono font-bold text-gray-800">
-                        {laporan.latitude.toFixed(6)}, {laporan.longitude.toFixed(6)}
-                      </p>
-                    </div>
-                    <button
-                      onClick={openInMaps}
-                      className="flex items-center gap-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-3 py-2 rounded-lg font-semibold text-sm transition-all duration-200 hover:shadow-lg"
-                    >
-                      <MapPin className="w-4 h-4" />
-                      Maps
-                    </button>
-                  </div>
-                  <div ref={mapRef} className="w-full h-60 rounded-xl overflow-hidden shadow-lg border border-gray-200"></div>
-                </div>
-              )}
-            </div>
-
-            <div className="lg:col-span-1 space-y-6">
-              <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-                <div className="flex items-center gap-3 mb-4">
-                  <User className="w-6 h-6 text-blue-600" />
-                  <h3 className="text-lg font-bold text-gray-800">Pelapor</h3>
-                </div>
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl border border-blue-200 space-y-3">
-                  <div>
-                    <p className="text-xs font-semibold text-gray-600 mb-1">Nama</p>
-                    <p className="font-bold text-gray-800 text-sm">{laporan.users?.nama || '-'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-gray-600 mb-1 flex items-center gap-2">
-                      <Mail className="w-3 h-3" /> Email
-                    </p>
-                    <a href={`mailto:${laporan.users?.email}`} className="text-blue-600 hover:text-blue-700 font-semibold break-all transition-colors text-xs">
-                      {laporan.users?.email || '-'}
-                    </a>
-                  </div>
-                </div>
-              </div>
-
-              {laporan.status === 'menunggu' && (
-                <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-                  <h3 className="font-bold text-lg text-gray-800 mb-3">Assign Petugas</h3>
-                  <select
-                    value={selectedPetugas}
-                    onChange={(e) => setSelectedPetugas(e.target.value)}
-                    className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-gray-900 bg-white mb-3 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200 font-medium text-sm"
-                  >
-                    <option value="">-- Pilih Petugas --</option>
-                    {petugas && petugas.length > 0 ? (
-                      petugas.map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.nama || 'Nama tidak tersedia'} - {p.email || 'Email tidak tersedia'}
-                        </option>
-                      ))
+                <div className="p-6">
+                  <p className="text-gray-700 mb-6 whitespace-pre-wrap">{laporan.deskripsi}</p>
+                  
+                  {/* Foto & Maps */}
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {laporan.laporan_foto && laporan.laporan_foto[0] ? (
+                      <img src={laporan.laporan_foto[0]} alt="Foto Pelapor" className="rounded-xl w-full h-48 object-cover border" />
                     ) : (
-                      <option disabled>Tidak ada petugas tersedia</option>
+                      <div className="h-48 bg-gray-100 rounded-xl flex items-center justify-center text-gray-400">Tidak ada foto</div>
                     )}
-                  </select>
-                  <button
-                    onClick={handleAssignPetugas}
-                    disabled={assigning || !selectedPetugas}
-                    className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white py-2 rounded-lg font-bold hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all duration-200 text-sm"
-                  >
-                    {assigning ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Assign...
-                      </>
-                    ) : (
-                      <>
-                        <Award className="w-4 h-4" />
-                        Assign
-                      </>
-                    )}
-                  </button>
-                </div>
-              )}
-
-              {laporan.status === 'diproses' && (
-                <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-                  <h3 className="font-bold text-lg text-gray-800 mb-3">Petugas Penangani</h3>
-                  <div className="bg-gradient-to-br from-blue-50 to-cyan-50 p-4 rounded-xl border border-blue-200 space-y-2">
-                    <div>
-                      <p className="text-xs font-semibold text-gray-600 mb-1">Nama</p>
-                      <p className="font-bold text-gray-800 text-sm">{laporan.petugas?.nama || '-'}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-gray-600 mb-1 flex items-center gap-2">
-                        <Mail className="w-3 h-3" /> Email
-                      </p>
-                      <p className="text-blue-600 font-semibold text-xs">{laporan.petugas?.email || '-'}</p>
-                    </div>
+                    <div ref={mapRef} className="h-48 rounded-xl bg-gray-200 border z-0" />
                   </div>
                 </div>
-              )}
+              </div>
 
-              {laporan.status === 'selesai' && (
-                <>
-                  <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-                    <h3 className="font-bold text-lg text-gray-800 mb-3">Petugas Penangani</h3>
-                    <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-4 rounded-xl border border-green-200 space-y-2">
-                      <div>
-                        <p className="text-xs font-semibold text-gray-600 mb-1">Nama</p>
-                        <p className="font-bold text-gray-800 text-sm">{laporan.petugas?.nama || '-'}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold text-gray-600 mb-1 flex items-center gap-2">
-                          <Mail className="w-3 h-3" /> Email
-                        </p>
-                        <p className="text-green-600 font-semibold text-xs">{laporan.petugas?.email || '-'}</p>
+              {/* LIST DINAS (The Core Feature) */}
+              <div>
+                <h2 className="text-xl font-bold mb-4 flex gap-2 items-center text-gray-800">
+                  <Building2 className="text-[#3E1C96]"/> Status Pengerjaan Dinas
+                </h2>
+
+                <div className="space-y-4">
+                  {laporan.laporan_dinas.map((ld) => (
+                    <div key={ld.id_laporan_dinas} className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm relative overflow-hidden">
+                      {/* Status Strip */}
+                      <div className={`absolute top-0 left-0 bottom-0 w-2 ${
+                        ld.status_dinas === 'selesai' ? 'bg-green-500' : 
+                        ld.status_dinas === 'menunggu_verifikasi_admin' ? 'bg-orange-500' : 'bg-gray-300'
+                      }`} />
+
+                      <div className="pl-4">
+                        <div className="flex justify-between items-start mb-4">
+                          <div>
+                            <h3 className="text-lg font-bold text-[#3E1C96]">{ld.dinas.nama_dinas}</h3>
+                            <span className={`text-xs px-2 py-1 rounded font-bold uppercase ${getStatusBadge(ld.status_dinas)}`}>
+                              {ld.status_dinas.replace(/_/g, ' ')}
+                            </span>
+                          </div>
+
+                          {/* Action Buttons */}
+                          {ld.status_dinas === 'menunggu_verifikasi_admin' && (
+                            <div className="flex gap-2">
+                              <button onClick={() => handleVerifikasiDinas(ld.id_laporan_dinas, true)} disabled={!!processingId} 
+                                className="bg-green-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-green-700 flex items-center gap-1">
+                                {processingId === ld.id_laporan_dinas ? <Loader2 className="w-3 h-3 animate-spin"/> : <CheckCircle className="w-3 h-3"/>} Terima
+                              </button>
+                              <button onClick={() => handleVerifikasiDinas(ld.id_laporan_dinas, false)} disabled={!!processingId}
+                                className="border border-red-200 text-red-600 px-4 py-2 rounded-lg text-xs font-bold hover:bg-red-50 flex items-center gap-1">
+                                <XCircle className="w-3 h-3"/> Tolak
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Catatan Dinas */}
+                        {ld.catatan_dinas && (
+                          <div className="bg-gray-50 p-3 rounded-lg text-sm text-gray-600 italic mb-4">
+                             <span className="font-bold not-italic">Catatan:</span> {ld.catatan_dinas}
+                          </div>
+                        )}
+
+                        {/* BUKTI FOTO DARI TABEL PELAKSANAAN */}
+                        {ld.pelaksanaan && ld.pelaksanaan.length > 0 ? (
+                          <div className="mt-4">
+                            <p className="text-xs font-bold text-gray-500 mb-2">Bukti Pengerjaan Lapangan:</p>
+                            <div className="flex gap-2 overflow-x-auto pb-2">
+                              {ld.pelaksanaan.map((pel, idx) => (
+                                pel.foto_sesudah?.map((fotoUrl, fIdx) => (
+                                  <a key={`${idx}-${fIdx}`} href={fotoUrl} target="_blank" className="shrink-0 w-24 h-24 rounded-lg overflow-hidden border hover:opacity-80">
+                                    <img src={fotoUrl} className="w-full h-full object-cover" alt="Bukti" />
+                                  </a>
+                                ))
+                              ))}
+                            </div>
+                            {ld.pelaksanaan[0]?.deskripsi_tindakan && (
+                               <p className="text-xs text-gray-500 mt-1">
+                                 Tindakan: {ld.pelaksanaan[0].deskripsi_tindakan}
+                               </p>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-gray-400 italic mt-2">Belum ada bukti foto diupload petugas.</div>
+                        )}
                       </div>
                     </div>
-                  </div>
+                  ))}
+                </div>
+              </div>
+            </div>
 
-                  <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-                    <h3 className="font-bold text-lg text-gray-800 mb-3">Catatan Petugas</h3>
-                    <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-                      <p className="text-gray-700 whitespace-pre-wrap leading-relaxed text-xs">{laporan.catatan_petugas || 'Tidak ada catatan'}</p>
+            {/* KOLOM KANAN: Info Pelapor */}
+            <div className="lg:col-span-1">
+               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sticky top-24">
+                  <h3 className="font-bold text-gray-400 text-sm uppercase mb-4 flex gap-2 items-center">
+                    <User className="w-4 h-4"/> Pelapor
+                  </h3>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-bold">
+                      {laporan.masyarakat?.nama?.[0] || 'U'}
+                    </div>
+                    <div>
+                      <p className="font-bold text-gray-800">{laporan.masyarakat?.nama || 'Tanpa Nama'}</p>
+                      <p className="text-xs text-gray-500">Masyarakat</p>
                     </div>
                   </div>
-
-                  <button
-                    onClick={handleKirimEmail}
-                    disabled={sending}
-                    className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white py-3 rounded-lg font-bold hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all duration-200 text-sm"
-                  >
-                    {sending ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Sending...
-                      </>
-                    ) : (
-                      <>
-                        <Send className="w-4 h-4" />
-                        Kirim Email
-                      </>
-                    )}
-                  </button>
-                </>
-              )}
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between border-b pb-2">
+                      <span className="text-gray-500">Email</span>
+                      <span className="font-medium truncate max-w-[150px]">{laporan.masyarakat?.email || '-'}</span>
+                    </div>
+                    <div className="flex justify-between border-b pb-2">
+                      <span className="text-gray-500">Telp</span>
+                      <span className="font-medium">{laporan.masyarakat?.telp || '-'}</span>
+                    </div>
+                  </div>
+               </div>
             </div>
+
           </div>
         </div>
       </div>
