@@ -196,15 +196,6 @@ export default function DetailKelolaLaporan() {
             .catch(err => console.error('❌ Gagal kirim email:', err));
           }
 
-          // --- C. PROSES TAMBAH POIN (Code Baru Disini) ---
-          console.log("💰 Menambahkan Poin Reward...");
-          const POIN_REWARD = 50; // Kamu bisa ubah jumlah poinnya di sini
-
-          const { error: errorPoin } = await supabase.rpc('tambah_poin_user', {
-            p_id_masyarakat: laporan.masyarakat.id_masyarakat, // ID diambil dari fetch di atas
-            p_jumlah: POIN_REWARD,
-            p_keterangan: `Reward Laporan Selesai: ${laporan.judul.substring(0, 30)}...`
-          });
 
           if (errorPoin) {
             console.error("❌ Gagal nambah poin:", errorPoin.message);

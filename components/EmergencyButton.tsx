@@ -7,7 +7,7 @@ import { Phone, MapPin, Copy, Siren, Ambulance, Flame, ShieldAlert, X } from 'lu
 const emergencyContacts = [
   { 
     name: 'Layanan Darurat Utama', 
-    number: '112', 
+    number: '+6287782446000', 
     desc: 'Semua Kedaruratan', 
     icon: <Siren className="w-8 h-8 text-white" />,
     bg: 'bg-red-600',
