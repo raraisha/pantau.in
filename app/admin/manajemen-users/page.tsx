@@ -11,33 +11,32 @@ import { Users, UserCheck, Shield, Loader2, AlertCircle, CheckCircle, Edit2, Tra
 type TabType = 'user' | 'petugas' | 'admin'
 type ActionType = 'list' | 'edit' | 'history'
 
-type User = {
-  id: string
+// --- TIPE DATA SESUAI SCHEMA DATABASE BARU ---
+type Masyarakat = {
+  id_masyarakat: string // Primary Key di tabel masyarakat
   nama: string
   email: string
-  password?: string
+  telp?: string
   created_at: string
 }
 
 type Petugas = {
-  id: string
+  id_petugas: string // Primary Key
   nama: string
   email: string
-  password?: string
   telp?: string
   created_at: string
 }
 
 type Admin = {
-  id: string
+  id_admin: string // Primary Key
   nama: string
   email: string
-  password?: string
   created_at: string
 }
 
 type Laporan = {
-  id: string
+  id_laporan: string
   judul: string
   status: string
   created_at: string
@@ -51,206 +50,202 @@ export default function KelolaAkun() {
   const [success, setSuccess] = useState('')
   const [stats, setStats] = useState({ user: 0, petugas: 0, admin: 0 })
 
-  const [users, setUsers] = useState<User[]>([])
-  const [userForm, setUserForm] = useState({ nama: '', email: '', password: '' })
-  const [editingUserId, setEditingUserId] = useState<string | null>(null)
-  const [showUserPass, setShowUserPass] = useState(false)
-  const [userHistory, setUserHistory] = useState<Laporan[]>([])
+  // State Data
+  const [masyarakatList, setMasyarakatList] = useState<Masyarakat[]>([])
+  const [petugasList, setPetugasList] = useState<Petugas[]>([])
+  const [adminList, setAdminList] = useState<Admin[]>([])
 
-  const [petugas, setPetugas] = useState<Petugas[]>([])
-  const [petugasForm, setPetugasForm] = useState({ nama: '', email: '', password: '', telp: '' })
-  const [editingPetugasId, setEditingPetugasId] = useState<string | null>(null)
-  const [showPetugasPass, setShowPetugasPass] = useState(false)
-  const [petugasHistory, setPetugasHistory] = useState<Laporan[]>([])
-
-  const [admins, setAdmins] = useState<Admin[]>([])
-  const [adminForm, setAdminForm] = useState({ nama: '', email: '', password: '' })
-  const [editingAdminId, setEditingAdminId] = useState<string | null>(null)
-  const [showAdminPass, setShowAdminPass] = useState(false)
+  // State Form
+  const [formData, setFormData] = useState({ nama: '', email: '', password: '', telp: '' })
+  const [editingId, setEditingId] = useState<string | null>(null)
+  
+  const [showPass, setShowPass] = useState(false)
+  const [historyLaporan, setHistoryLaporan] = useState<Laporan[]>([])
 
   useEffect(() => {
     AOS.init({ duration: 800, once: true })
-    fetchAllData()
+    fetchAllStats()
   }, [])
 
   useEffect(() => {
     if (action === 'list') fetchData()
   }, [activeTab, action])
 
-  const fetchAllData = async () => {
+  // --- 1. FETCH STATISTIK ---
+  const fetchAllStats = async () => {
     try {
-      const [userRes, petugasRes, adminRes] = await Promise.all([
-        supabase.from('users').select('id'),
-        supabase.from('petugas').select('id'),
-        supabase.from('admins').select('id')
+      const [resMasyarakat, resPetugas, resAdmin] = await Promise.all([
+        supabase.from('masyarakat').select('id_masyarakat', { count: 'exact', head: true }),
+        supabase.from('petugas').select('id_petugas', { count: 'exact', head: true }),
+        supabase.from('admin').select('id_admin', { count: 'exact', head: true })
       ])
       setStats({
-        user: userRes.data?.length || 0,
-        petugas: petugasRes.data?.length || 0,
-        admin: adminRes.data?.length || 0
+        user: resMasyarakat.count || 0,
+        petugas: resPetugas.count || 0,
+        admin: resAdmin.count || 0
       })
     } catch (err) {
       console.error(err)
     }
   }
 
+  // --- 2. FETCH DATA UTAMA ---
   const fetchData = async () => {
     setLoading(true)
     try {
       if (activeTab === 'user') {
-        const { data } = await supabase.from('users').select('*').order('created_at', { ascending: false })
-        setUsers(data || [])
+        // Fetch Tabel Masyarakat
+        const { data, error } = await supabase
+          .from('masyarakat')
+          .select('id_masyarakat, nama, email, telp, created_at')
+          .order('created_at', { ascending: false })
+        
+        if(error) throw error
+        setMasyarakatList(data || [])
+
       } else if (activeTab === 'petugas') {
-        const { data } = await supabase.from('petugas').select('*').order('created_at', { ascending: false })
-        setPetugas(data || [])
+        // Fetch Tabel Petugas
+        const { data, error } = await supabase
+          .from('petugas')
+          .select('id_petugas, nama, email, telp, created_at')
+          .order('created_at', { ascending: false })
+
+        if(error) throw error
+        setPetugasList(data || [])
+
       } else if (activeTab === 'admin') {
-        const { data } = await supabase.from('admins').select('*').order('created_at', { ascending: false })
-        setAdmins(data || [])
+        // Fetch Tabel Admin
+        const { data, error } = await supabase
+          .from('admin') // Nama tabel: admin (bukan admins)
+          .select('id_admin, nama, email, created_at')
+          .order('created_at', { ascending: false })
+
+        if(error) throw error
+        setAdminList(data || [])
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err)
+      setError("Gagal mengambil data: " + err.message)
     } finally {
       setLoading(false)
     }
   }
 
-  const fetchUserHistory = async (userId: string) => {
+  // --- 3. FETCH HISTORY LAPORAN ---
+  const fetchHistory = async (id: string) => {
     try {
-      const { data } = await supabase
-        .from('laporan')
-        .select('id, judul, status, created_at')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-      setUserHistory(data || [])
+      let query = supabase.from('laporan').select('id_laporan, judul, status, created_at').order('created_at', { ascending: false })
+      
+      // Sesuaikan kolom foreign key di tabel laporan
+      if (activeTab === 'user') {
+        query = query.eq('id_masyarakat', id) // Pastikan di tabel laporan namanya id_masyarakat
+      } else if (activeTab === 'petugas') {
+        // Petugas mungkin pakai tabel 'laporan_petugas' atau kolom 'id_petugas' di laporan (sesuaikan relasi)
+        // Disini saya asumsikan ambil dari tabel laporan yang ditangani petugas
+        // Kalau relasinya many-to-many, logic ini perlu disesuaikan.
+        // Untuk simpelnya, kita kosongkan dulu kalau struktur relasi petugas-laporan belum fix.
+        setHistoryLaporan([]) 
+        return
+      }
+
+      const { data, error } = await query
+      if (error) throw error
+      setHistoryLaporan(data || [])
     } catch (err) {
       console.error(err)
     }
   }
 
-  const fetchPetugasHistory = async (petugasId: string) => {
+  // --- 4. CRUD HANDLERS ---
+  
+  const startEdit = (data: any) => {
+    // Mapping data ke form
+    setFormData({
+        nama: data.nama,
+        email: data.email,
+        telp: data.telp || '',
+        password: '' // Kosongkan password saat edit
+    })
+    // Mapping ID (karena tabel masyarakat pakai id_masyarakat, sisanya id)
+    setEditingId(activeTab === 'user' ? data.id_masyarakat : data.id)
+    setAction('edit')
+    setError('')
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm(`Yakin hapus ${activeTab} ini?`)) return
+    
     try {
-      const { data } = await supabase
-        .from('laporan')
-        .select('id, judul, status, created_at')
-        .eq('petugas_id', petugasId)
-        .order('created_at', { ascending: false })
-      setPetugasHistory(data || [])
-    } catch (err) {
-      console.error(err)
+      let table = ''
+      let pk = 'id'
+
+      if (activeTab === 'user') { table = 'masyarakat'; pk = 'id_masyarakat' }
+      else if (activeTab === 'petugas') { table = 'petugas'; pk = 'id' }
+      else { table = 'admin'; pk = 'id' }
+
+      const { error } = await supabase.from(table).delete().eq(pk, id)
+      if (error) throw error
+
+      setSuccess('Data berhasil dihapus!')
+      fetchData()
+      fetchAllStats()
+    } catch (err: any) {
+      setError(err.message || 'Gagal hapus data')
     }
   }
 
-  const handleEditUser = async () => {
-    if (!userForm.nama || !userForm.email) {
+  const handleSaveEdit = async () => {
+    if (!formData.nama || !formData.email) {
       setError('Nama dan email wajib diisi')
       return
     }
     setLoading(true)
+    
     try {
-      const updateData: any = { nama: userForm.nama, email: userForm.email }
-      if (userForm.password) updateData.password = userForm.password
-      const { error: err } = await supabase.from('users').update(updateData).eq('id', editingUserId)
+      const updatePayload: any = { 
+          nama: formData.nama, 
+          email: formData.email 
+      }
+      
+      // Tambah field telp jika bukan admin
+      if (activeTab !== 'admin') {
+          updatePayload.telp = formData.telp
+      }
+
+      // Hanya update password jika diisi
+      if (formData.password) {
+          updatePayload.password = formData.password
+      }
+
+      let table = ''
+      let pk = 'id'
+
+      if (activeTab === 'user') { table = 'masyarakat'; pk = 'id_masyarakat' }
+      else if (activeTab === 'petugas') { table = 'petugas'; pk = 'id' }
+      else { table = 'admin'; pk = 'id' }
+
+      const { error: err } = await supabase
+        .from(table)
+        .update(updatePayload)
+        .eq(pk, editingId)
+
       if (err) throw err
-      setSuccess('User berhasil diupdate!')
-      setUserForm({ nama: '', email: '', password: '' })
-      setEditingUserId(null)
+
+      setSuccess('Data berhasil diupdate!')
+      setFormData({ nama: '', email: '', password: '', telp: '' })
+      setEditingId(null)
       setAction('list')
       fetchData()
     } catch (err: any) {
-      setError(err.message || 'Gagal update user')
+      setError(err.message || 'Gagal update data')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleDeleteUser = async (id: string) => {
-    if (!confirm('Yakin hapus user ini?')) return
-    try {
-      await supabase.from('users').delete().eq('id', id)
-      setSuccess('User berhasil dihapus!')
-      fetchData()
-      fetchAllData()
-    } catch (err: any) {
-      setError(err.message || 'Gagal hapus user')
-    }
-  }
-
-  const handleEditPetugas = async () => {
-    if (!petugasForm.nama || !petugasForm.email) {
-      setError('Nama dan email wajib diisi')
-      return
-    }
-    setLoading(true)
-    try {
-      const updateData: any = { nama: petugasForm.nama, email: petugasForm.email, telp: petugasForm.telp }
-      if (petugasForm.password) updateData.password = petugasForm.password
-      const { error: err } = await supabase.from('petugas').update(updateData).eq('id', editingPetugasId)
-      if (err) throw err
-      setSuccess('Petugas berhasil diupdate!')
-      setPetugasForm({ nama: '', email: '', password: '', telp: '' })
-      setEditingPetugasId(null)
-      setAction('list')
-      fetchData()
-    } catch (err: any) {
-      setError(err.message || 'Gagal update petugas')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleDeletePetugas = async (id: string) => {
-    if (!confirm('Yakin hapus petugas ini?')) return
-    try {
-      await supabase.from('petugas').delete().eq('id', id)
-      setSuccess('Petugas berhasil dihapus!')
-      fetchData()
-      fetchAllData()
-    } catch (err: any) {
-      setError(err.message || 'Gagal hapus petugas')
-    }
-  }
-
-  const handleEditAdmin = async () => {
-    if (!adminForm.nama || !adminForm.email) {
-      setError('Nama dan email wajib diisi')
-      return
-    }
-    setLoading(true)
-    try {
-      const updateData: any = { nama: adminForm.nama, email: adminForm.email }
-      if (adminForm.password) updateData.password = adminForm.password
-      const { error: err } = await supabase.from('admins').update(updateData).eq('id', editingAdminId)
-      if (err) throw err
-      setSuccess('Admin berhasil diupdate!')
-      setAdminForm({ nama: '', email: '', password: '' })
-      setEditingAdminId(null)
-      setAction('list')
-      fetchData()
-    } catch (err: any) {
-      setError(err.message || 'Gagal update admin')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleDeleteAdmin = async (id: string) => {
-    if (!confirm('Yakin hapus admin ini?')) return
-    try {
-      await supabase.from('admins').delete().eq('id', id)
-      setSuccess('Admin berhasil dihapus!')
-      fetchData()
-      fetchAllData()
-    } catch (err: any) {
-      setError(err.message || 'Gagal hapus admin')
-    }
-  }
-
+  // Helper UI
   const formatDate = (date: string) => new Date(date).toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
+    day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'
   })
 
   const getStatusColor = (status: string) => {
@@ -261,6 +256,8 @@ export default function KelolaAkun() {
       default: return 'bg-gray-100 text-gray-700'
     }
   }
+
+  const clearError = () => { setError(''); setSuccess('') }
 
   return (
     <>
@@ -273,7 +270,7 @@ export default function KelolaAkun() {
               🔐 Manajemen Akun
             </h1>
             <p className="text-gray-800 text-lg max-w-3xl font-medium">
-              Kelola akun user, petugas, dan admin dengan mudah dan aman.
+              Kelola akun masyarakat, petugas, dan admin dengan mudah dan aman.
             </p>
           </div>
 
@@ -284,7 +281,7 @@ export default function KelolaAkun() {
                 <Users className="w-8 h-8 opacity-80" />
                 <span className="text-3xl font-bold">{stats.user}</span>
               </div>
-              <p className="text-blue-100 font-medium">Total User</p>
+              <p className="text-blue-100 font-medium">Total Masyarakat</p>
             </div>
 
             <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-shadow">
@@ -331,7 +328,7 @@ export default function KelolaAkun() {
                   }`}
                 >
                   {tab === 'user' ? <Users className="w-5 h-5" /> : tab === 'petugas' ? <UserCheck className="w-5 h-5" /> : <Shield className="w-5 h-5" />}
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  {tab === 'user' ? 'Masyarakat' : tab.charAt(0).toUpperCase() + tab.slice(1)}
                 </button>
               ))}
             </div>
@@ -341,114 +338,55 @@ export default function KelolaAkun() {
           {action === 'list' && (
             <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-2xl overflow-hidden border border-gray-100" data-aos="fade-up">
               <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-[#3E1C96] to-[#5B2CB8]">
-                <h2 className="text-2xl font-bold text-white">📂 Daftar {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h2>
+                <h2 className="text-2xl font-bold text-white">📂 Daftar {activeTab === 'user' ? 'Masyarakat' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h2>
               </div>
 
               {loading ? (
                 <div className="flex justify-center items-center py-20">
                   <Loader2 className="w-10 h-10 animate-spin text-[#3E1C96]" />
                 </div>
-              ) : activeTab === 'user' && users.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b">
-                      <tr>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-800 uppercase">Nama</th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-800 uppercase">Email</th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-800 uppercase">Terdaftar</th>
-                        <th className="px-6 py-4 text-center text-xs font-semibold text-gray-800 uppercase">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {users.map((u, i) => (
-                        <tr key={u.id} className={`hover:bg-purple-50/50 transition ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
-                          <td className="px-6 py-4 font-semibold text-gray-900">{u.nama}</td>
-                          <td className="px-6 py-4 text-gray-800 flex items-center gap-2"><Mail className="w-4 h-4" /> {u.email}</td>
-                          <td className="px-6 py-4 text-gray-800 text-sm">{formatDate(u.created_at)}</td>
-                          <td className="px-6 py-4 text-center flex justify-center gap-2">
-                            <button onClick={() => { fetchUserHistory(u.id); setAction('history'); clearError() }} className="p-2 bg-purple-100 text-purple-600 rounded-lg hover:bg-purple-200" title="Lihat history">
-                              <History className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => { startEditUser(u); clearError() }} className="p-2 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200">
-                              <Edit2 className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => handleDeleteUser(u.id)} className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : activeTab === 'petugas' && petugas.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b">
-                      <tr>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-800 uppercase">Nama</th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-800 uppercase">Email</th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-800 uppercase">Terdaftar</th>
-                        <th className="px-6 py-4 text-center text-xs font-semibold text-gray-800 uppercase">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {petugas.map((p, i) => (
-                        <tr key={p.id} className={`hover:bg-purple-50/50 transition ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
-                          <td className="px-6 py-4 font-semibold text-gray-900">{p.nama}</td>
-                          <td className="px-6 py-4 text-gray-800 flex items-center gap-2"><Mail className="w-4 h-4" /> {p.email}</td>
-                          <td className="px-6 py-4 text-gray-800 flex items-center gap-2"><Phone className="w-4 h-4" /> {p.telp || '-'}</td>
-                          <td className="px-6 py-4 text-gray-800 text-sm">{formatDate(p.created_at)}</td>
-                          <td className="px-6 py-4 text-center flex justify-center gap-2">
-                            <button onClick={() => { fetchPetugasHistory(p.id); setAction('history'); clearError() }} className="p-2 bg-purple-100 text-purple-600 rounded-lg hover:bg-purple-200" title="Lihat history">
-                              <History className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => { startEditPetugas(p); clearError() }} className="p-2 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200">
-                              <Edit2 className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => handleDeletePetugas(p.id)} className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : activeTab === 'admin' && admins.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b">
-                      <tr>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-800 uppercase">Nama</th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-800 uppercase">Email</th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-800 uppercase">Terdaftar</th>
-                        <th className="px-6 py-4 text-center text-xs font-semibold text-gray-800 uppercase">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {admins.map((a, i) => (
-                        <tr key={a.id} className={`hover:bg-purple-50/50 transition ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
-                          <td className="px-6 py-4 font-semibold text-gray-900">{a.nama}</td>
-                          <td className="px-6 py-4 text-gray-800 flex items-center gap-2"><Mail className="w-4 h-4" /> {a.email}</td>
-                          <td className="px-6 py-4 text-gray-800 text-sm">{formatDate(a.created_at)}</td>
-                          <td className="px-6 py-4 text-center flex justify-center gap-2">
-                            <button onClick={() => { startEditAdmin(a); clearError() }} className="p-2 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200">
-                              <Edit2 className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => handleDeleteAdmin(a.id)} className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
               ) : (
-                <div className="text-center py-16">
-                  <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                  <p className="text-gray-800 font-medium">Belum ada data</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b">
+                      <tr>
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-800 uppercase">Nama</th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-800 uppercase">Email</th>
+                        {activeTab !== 'admin' && <th className="px-6 py-4 text-left text-xs font-semibold text-gray-800 uppercase">Telepon</th>}
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-800 uppercase">Terdaftar</th>
+                        <th className="px-6 py-4 text-center text-xs font-semibold text-gray-800 uppercase">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {(activeTab === 'user' ? masyarakatList : activeTab === 'petugas' ? petugasList : adminList).length === 0 ? (
+                         <tr><td colSpan={5} className="p-8 text-center text-gray-500">Data kosong</td></tr>
+                      ) : (
+                        (activeTab === 'user' ? masyarakatList : activeTab === 'petugas' ? petugasList : adminList).map((item: any, i) => (
+                            <tr key={item.id || item.id_masyarakat} className={`hover:bg-purple-50/50 transition ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                            <td className="px-6 py-4 font-semibold text-gray-900">{item.nama}</td>
+                            <td className="px-6 py-4 text-gray-800 flex items-center gap-2"><Mail className="w-4 h-4" /> {item.email}</td>
+                            {activeTab !== 'admin' && (
+                                <td className="px-6 py-4 text-gray-800"><span className="flex items-center gap-2"><Phone className="w-4 h-4" /> {item.telp || '-'}</span></td>
+                            )}
+                            <td className="px-6 py-4 text-gray-800 text-sm">{formatDate(item.created_at)}</td>
+                            <td className="px-6 py-4 text-center flex justify-center gap-2">
+                                {activeTab === 'user' && (
+                                    <button onClick={() => { fetchHistory(item.id_masyarakat); setAction('history'); clearError() }} className="p-2 bg-purple-100 text-purple-600 rounded-lg hover:bg-purple-200" title="Lihat history">
+                                    <History className="w-4 h-4" />
+                                    </button>
+                                )}
+                                <button onClick={() => { startEdit(item); clearError() }} className="p-2 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200">
+                                <Edit2 className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => handleDelete(activeTab === 'user' ? item.id_masyarakat : item.id)} className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200">
+                                <Trash2 className="w-4 h-4" />
+                                </button>
+                            </td>
+                            </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
@@ -470,7 +408,7 @@ export default function KelolaAkun() {
                 <div className="flex justify-center items-center py-20">
                   <Loader2 className="w-10 h-10 animate-spin text-[#3E1C96]" />
                 </div>
-              ) : (activeTab === 'user' ? userHistory : petugasHistory).length > 0 ? (
+              ) : historyLaporan.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead className="bg-gray-50 border-b">
@@ -481,8 +419,8 @@ export default function KelolaAkun() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {(activeTab === 'user' ? userHistory : petugasHistory).map((h, i) => (
-                        <tr key={h.id} className={`hover:bg-purple-50/50 transition ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                      {historyLaporan.map((h, i) => (
+                        <tr key={h.id_laporan} className={`hover:bg-purple-50/50 transition ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
                           <td className="px-6 py-4 font-semibold text-gray-900">{h.judul}</td>
                           <td className="px-6 py-4">
                             <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(h.status)}`}>
@@ -508,148 +446,62 @@ export default function KelolaAkun() {
           {action === 'edit' && (
             <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 p-8 max-w-2xl mx-auto" data-aos="fade-up">
               <h2 className="text-3xl font-bold text-gray-900 mb-8">
-                ✏️ Edit {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+                ✏️ Edit {activeTab === 'user' ? 'Masyarakat' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
               </h2>
 
               <div className="space-y-5">
-                {activeTab === 'user' && (
-                  <>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-800 mb-2">Nama *</label>
+                    <input
+                      type="text"
+                      value={formData.nama}
+                      onChange={(e) => setFormData({ ...formData, nama: e.target.value })}
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-[#3E1C96] focus:ring-2 focus:ring-[#3E1C96]/20 outline-none transition-all text-gray-900"
+                      placeholder="Masukkan nama"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-800 mb-2">Email *</label>
+                    <input
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-[#3E1C96] focus:ring-2 focus:ring-[#3E1C96]/20 outline-none transition-all text-gray-900"
+                      placeholder="Masukkan email"
+                    />
+                  </div>
+                  
+                  {activeTab !== 'admin' && (
                     <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-2">Nama *</label>
-                      <input
-                        type="text"
-                        value={userForm.nama}
-                        onChange={(e) => setUserForm({ ...userForm, nama: e.target.value })}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-[#3E1C96] focus:ring-2 focus:ring-[#3E1C96]/20 outline-none transition-all text-gray-900"
-                        placeholder="Masukkan nama"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-2">Email *</label>
-                      <input
-                        type="email"
-                        value={userForm.email}
-                        onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-[#3E1C96] focus:ring-2 focus:ring-[#3E1C96]/20 outline-none transition-all text-gray-900"
-                        placeholder="Masukkan email"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-2">Password (kosongkan jika tidak diubah)</label>
-                      <div className="relative">
+                        <label className="block text-sm font-semibold text-gray-800 mb-2">No. Telepon</label>
                         <input
-                          type={showUserPass ? 'text' : 'password'}
-                          value={userForm.password}
-                          onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
-                          className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-[#3E1C96] focus:ring-2 focus:ring-[#3E1C96]/20 outline-none transition-all text-gray-900"
-                          placeholder="Masukkan password"
-                        />
-                        <button
-                          onClick={() => setShowUserPass(!showUserPass)}
-                          className="absolute right-4 top-3.5 text-gray-600 hover:text-gray-800"
-                        >
-                          {showUserPass ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {activeTab === 'petugas' && (
-                  <>
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-2">Nama *</label>
-                      <input
                         type="text"
-                        value={petugasForm.nama}
-                        onChange={(e) => setPetugasForm({ ...petugasForm, nama: e.target.value })}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-[#3E1C96] focus:ring-2 focus:ring-[#3E1C96]/20 outline-none transition-all text-gray-900"
-                        placeholder="Masukkan nama"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-2">Email *</label>
-                      <input
-                        type="email"
-                        value={petugasForm.email}
-                        onChange={(e) => setPetugasForm({ ...petugasForm, email: e.target.value })}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-[#3E1C96] focus:ring-2 focus:ring-[#3E1C96]/20 outline-none transition-all text-gray-900"
-                        placeholder="Masukkan email"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-2">No. Telepon</label>
-                      <input
-                        type="text"
-                        value={petugasForm.telp}
-                        onChange={(e) => setPetugasForm({ ...petugasForm, telp: e.target.value })}
+                        value={formData.telp}
+                        onChange={(e) => setFormData({ ...formData, telp: e.target.value })}
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-[#3E1C96] focus:ring-2 focus:ring-[#3E1C96]/20 outline-none transition-all text-gray-900"
                         placeholder="Masukkan nomor telepon"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-2">Password (kosongkan jika tidak diubah)</label>
-                      <div className="relative">
-                        <input
-                          type={showPetugasPass ? 'text' : 'password'}
-                          value={petugasForm.password}
-                          onChange={(e) => setPetugasForm({ ...petugasForm, password: e.target.value })}
-                          className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-[#3E1C96] focus:ring-2 focus:ring-[#3E1C96]/20 outline-none transition-all text-gray-900"
-                          placeholder="Masukkan password"
                         />
-                        <button
-                          onClick={() => setShowPetugasPass(!showPetugasPass)}
-                          className="absolute right-4 top-3.5 text-gray-600 hover:text-gray-800"
-                        >
-                          {showPetugasPass ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                        </button>
-                      </div>
                     </div>
-                  </>
-                )}
+                  )}
 
-                {activeTab === 'admin' && (
-                  <>
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-2">Nama *</label>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-800 mb-2">Password (kosongkan jika tidak diubah)</label>
+                    <div className="relative">
                       <input
-                        type="text"
-                        value={adminForm.nama}
-                        onChange={(e) => setAdminForm({ ...adminForm, nama: e.target.value })}
+                        type={showPass ? 'text' : 'password'}
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-[#3E1C96] focus:ring-2 focus:ring-[#3E1C96]/20 outline-none transition-all text-gray-900"
-                        placeholder="Masukkan nama"
+                        placeholder="Masukkan password"
                       />
+                      <button
+                        onClick={() => setShowPass(!showPass)}
+                        className="absolute right-4 top-3.5 text-gray-600 hover:text-gray-800"
+                      >
+                        {showPass ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
                     </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-2">Email *</label>
-                      <input
-                        type="email"
-                        value={adminForm.email}
-                        onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-[#3E1C96] focus:ring-2 focus:ring-[#3E1C96]/20 outline-none transition-all text-gray-900"
-                        placeholder="Masukkan email"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-2">Password (kosongkan jika tidak diubah)</label>
-                      <div className="relative">
-                        <input
-                          type={showAdminPass ? 'text' : 'password'}
-                          value={adminForm.password}
-                          onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })}
-                          className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-[#3E1C96] focus:ring-2 focus:ring-[#3E1C96]/20 outline-none transition-all text-gray-900"
-                          placeholder="Masukkan password"
-                        />
-                        <button
-                          onClick={() => setShowAdminPass(!showAdminPass)}
-                          className="absolute right-4 top-3.5 text-gray-600 hover:text-gray-800"
-                        >
-                          {showAdminPass ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                )}
+                  </div>
               </div>
 
               <div className="flex gap-3 mt-8">
@@ -660,16 +512,12 @@ export default function KelolaAkun() {
                   Batal
                 </button>
                 <button
-                  onClick={() => {
-                    if (activeTab === 'user') handleEditUser()
-                    else if (activeTab === 'petugas') handleEditPetugas()
-                    else handleEditAdmin()
-                  }}
+                  onClick={handleSaveEdit}
                   disabled={loading}
                   className="flex-1 px-4 py-3 bg-gradient-to-r from-[#3E1C96] to-[#5B2CB8] text-white rounded-lg font-semibold hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                  Update
+                  Simpan Perubahan
                 </button>
               </div>
             </div>
@@ -679,27 +527,4 @@ export default function KelolaAkun() {
       <Footer />
     </>
   )
-
-  function startEditUser(u: User) {
-    setUserForm({ nama: u.nama, email: u.email, password: '' })
-    setEditingUserId(u.id)
-    setAction('edit')
-  }
-
-  function startEditPetugas(p: Petugas) {
-    setPetugasForm({ nama: p.nama, email: p.email, password: '', telp: p.telp || '' })
-    setEditingPetugasId(p.id)
-    setAction('edit')
-  }
-
-  function startEditAdmin(a: Admin) {
-    setAdminForm({ nama: a.nama, email: a.email, password: '' })
-    setEditingAdminId(a.id)
-    setAction('edit')
-  }
-
-  function clearError() {
-    setError('')
-    setSuccess('')
-  }
 }

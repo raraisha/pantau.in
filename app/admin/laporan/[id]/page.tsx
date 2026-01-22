@@ -14,6 +14,7 @@ import 'leaflet/dist/leaflet.css'
 
 // --- Types Sesuai Schema Kamu ---
 type Masyarakat = {
+  id_masyarakat: string // <--- WAJIB ADA: Biar sistem tahu siapa yg dikasih poin
   nama: string
   email: string
   telp: string
@@ -30,11 +31,10 @@ type Pelaksanaan = {
 }
 
 type LaporanDinas = {
-  id_laporan_dinas: string // Primary Key
+  id_laporan_dinas: string 
   status_dinas: string
   catatan_dinas: string | null
   dinas: Dinas
-  // Kita ambil bukti dari tabel pelaksanaan
   pelaksanaan: Pelaksanaan[] 
 }
 
@@ -49,8 +49,8 @@ type LaporanDetail = {
   longitude: number
   laporan_foto: string[] | null
   created_at: string
-  masyarakat: Masyarakat // Relasi ke tabel masyarakat
-  laporan_dinas: LaporanDinas[] // Relasi ke tabel laporan_dinas
+  masyarakat: Masyarakat 
+  laporan_dinas: LaporanDinas[] 
 }
 
 export default function DetailKelolaLaporan() {
@@ -68,7 +68,7 @@ export default function DetailKelolaLaporan() {
 
   // --- 1. Fetch Data ---
   useEffect(() => {
-    fetchLaporanDetail()
+    if (id) fetchLaporanDetail()
   }, [id])
 
   // --- 2. Load Map ---
@@ -98,44 +98,33 @@ export default function DetailKelolaLaporan() {
   const fetchLaporanDetail = async () => {
     try {
       setLoading(true)
-      
-      // QUERY DISESUAIKAN DENGAN SCHEMA DB KAMU
       const { data, error } = await supabase
         .from('laporan')
         .select(`
           *,
           masyarakat!fk_laporan_masyarakat (
-            nama,
-            email,
-            telp
+            id_masyarakat,   
+            nama, email, telp
           ),
           laporan_dinas (
-            id_laporan_dinas,
-            status_dinas,
-            catatan_dinas,
-            dinas (
-              nama_dinas
-            ),
-            pelaksanaan (
-              foto_sesudah,
-              deskripsi_tindakan,
-              waktu_selesai
-            )
+            id_laporan_dinas, status_dinas, catatan_dinas,
+            dinas ( nama_dinas ),
+            pelaksanaan ( foto_sesudah, deskripsi_tindakan, waktu_selesai )
           )
         `)
+        // ^^^ Perhatikan baris 'id' di atas, penting untuk poin!
         .eq('id_laporan', id)
         .single()
 
       if (error) throw error
 
-      // Formatting Data (Handling Arrays from Joins)
+      // Formatting Data
       const formattedData = {
         ...data,
         masyarakat: Array.isArray(data.masyarakat) ? data.masyarakat[0] : data.masyarakat,
         laporan_dinas: data.laporan_dinas?.map((ld: any) => ({
           ...ld,
           dinas: Array.isArray(ld.dinas) ? ld.dinas[0] : ld.dinas,
-          // Pelaksanaan bisa banyak jika banyak petugas, kita ambil semua untuk ditampilkan
           pelaksanaan: ld.pelaksanaan || []
         }))
       }
@@ -149,7 +138,97 @@ export default function DetailKelolaLaporan() {
     }
   }
 
-  // --- 3. LOGIKA VERIFIKASI ---
+  // --- 3. LOGIKA VERIFIKASI UTAMA (DENGAN EMAIL & POIN) ---
+  const cekStatusUtamaOtomatis = async (idLaporan: string) => {
+    console.log("1. Mengecek status dinas...");
+
+    const { data: allDinas } = await supabase
+      .from('laporan_dinas')
+      .select(`status_dinas, catatan_dinas, dinas ( nama_dinas )`)
+      .eq('id_laporan', idLaporan)
+
+    if (allDinas && allDinas.length > 0) {
+      const allFinished = allDinas.every((item: any) => item.status_dinas === 'selesai')
+      
+      if (allFinished) {
+        console.log("2. Semua dinas selesai. Mengupdate status utama ke DB...");
+        const waktuSelesaiNow = new Date().toISOString()
+
+        // --- A. UPDATE DATABASE (Status Selesai) ---
+        const { error: mainError } = await supabase
+          .from('laporan')
+          .update({ status: 'selesai', waktu_selesai: waktuSelesaiNow })
+          .eq('id_laporan', idLaporan)
+
+        if (mainError) {
+            console.error("❌ ERROR UPDATE DATABASE:", mainError.message);
+            return;
+        } else {
+            console.log("✅ Update Database Berhasil.");
+        }
+
+        console.log("3. Memproses Email & Poin untuk:", laporan?.masyarakat?.nama);
+
+        if (laporan?.masyarakat) {
+          
+          // --- B. PROSES KIRIM EMAIL ---
+          if (laporan.masyarakat.email) {
+            const listNamaDinas = allDinas.map((d: any) => d.dinas?.nama_dinas).filter(Boolean);
+            const gabunganCatatan = allDinas.map((d: any) => d.catatan_dinas).join(' | ');
+
+            fetch('/api/send-email/laporan-selesai', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email: laporan.masyarakat.email,
+                nama: laporan.masyarakat.nama,
+                judul: laporan.judul,
+                lokasi: laporan.lokasi || 'Bandung',
+                tanggalLapor: laporan.created_at,
+                tanggalSelesai: waktuSelesaiNow,
+                dinasList: listNamaDinas,
+                catatanGabungan: gabunganCatatan,
+                linkLaporan: `${window.location.origin}/masyarakat/riwayat` 
+              })
+            })
+            .then(res => res.json())
+            .then(data => console.log('✅ Email terkirim:', data))
+            .catch(err => console.error('❌ Gagal kirim email:', err));
+          }
+
+          // --- C. PROSES TAMBAH POIN (Code Baru Disini) ---
+          console.log("💰 Menambahkan Poin Reward...");
+          const POIN_REWARD = 50; // Kamu bisa ubah jumlah poinnya di sini
+
+          const { error: errorPoin } = await supabase.rpc('tambah_poin_user', {
+            p_id_masyarakat: laporan.masyarakat.id_masyarakat, // ID diambil dari fetch di atas
+            p_jumlah: POIN_REWARD,
+            p_keterangan: `Reward Laporan Selesai: ${laporan.judul.substring(0, 30)}...`
+          });
+
+          if (errorPoin) {
+            console.error("❌ Gagal nambah poin:", errorPoin.message);
+          } else {
+            console.log(`✅ Sukses! User dapat +${POIN_REWARD} Poin.`);
+          }
+
+          setSuccess(`🎉 Laporan Selesai! Email terkirim & Pelapor dapat +${POIN_REWARD} Poin.`);
+          
+        } else {
+            console.warn("⚠️ Data masyarakat tidak lengkap, email/poin dilewati.");
+            setSuccess('Laporan Selesai (Data pelapor tidak lengkap untuk notifikasi).');
+        }
+
+        // Refresh UI
+        fetchLaporanDetail();
+
+      } else {
+        console.log("Info: Belum semua dinas statusnya 'selesai'.");
+      }
+    }
+  }
+
+  // --- 4. LOGIKA TOMBOL KLIK ---
   const handleVerifikasiDinas = async (idLaporanDinas: string, isApproved: boolean) => {
     setProcessingId(idLaporanDinas)
     setError('')
@@ -161,24 +240,24 @@ export default function DetailKelolaLaporan() {
         ? 'Disetujui oleh Admin Pusat.' 
         : 'Ditolak oleh Admin Pusat. Mohon perbaiki.'
 
-      // Update status laporan_dinas
       const { error: updateError } = await supabase
         .from('laporan_dinas')
         .update({ 
           status_dinas: newStatus,
           catatan_dinas: catatan
         })
-        .eq('id_laporan_dinas', idLaporanDinas) // Pakai id_laporan_dinas sesuai schema
+        .eq('id_laporan_dinas', idLaporanDinas)
 
       if (updateError) throw updateError
 
       await fetchLaporanDetail()
       
-      if (isApproved) {
-        await cekStatusUtamaOtomatis(laporan!.id_laporan)
+      setSuccess(`Laporan dinas berhasil di-${isApproved ? 'terima' : 'kembalikan'}.`)
+
+      if (isApproved && laporan) {
+        await cekStatusUtamaOtomatis(laporan.id_laporan)
       }
 
-      setSuccess(`Laporan dinas berhasil di-${isApproved ? 'terima' : 'kembalikan'}.`)
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -186,47 +265,7 @@ export default function DetailKelolaLaporan() {
     }
   }
 
-  const cekStatusUtamaOtomatis = async (idLaporan: string) => {
-    const { data: latestDinas } = await supabase
-      .from('laporan_dinas')
-      .select('status_dinas')
-      .eq('id_laporan', idLaporan)
-
-    if (latestDinas) {
-      const allFinished = latestDinas.every(item => item.status_dinas === 'selesai')
-      
-      if (allFinished) {
-        // Update Laporan Utama -> Selesai
-        const { error: mainError } = await supabase
-          .from('laporan')
-          .update({ 
-            status: 'selesai',
-            waktu_selesai: new Date().toISOString()
-          })
-          .eq('id_laporan', idLaporan)
-
-        if (!mainError && laporan?.masyarakat?.email) {
-          // Kirim Email (Asumsi API route sudah dibuat)
-          fetch('/api/send-email-selesai', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              email: laporan.masyarakat.email,
-              nama: laporan.masyarakat.nama,
-              judul: laporan.judul,
-              link: `https://lapor-bandung.go.id/laporan/${idLaporan}`
-            })
-          }).catch(console.error)
-          
-          setSuccess('🎉 SEMUA DINAS SELESAI! Laporan ditutup & Email terkirim.')
-          fetchLaporanDetail()
-        }
-      }
-    }
-  }
-
   const getStatusBadge = (status: string) => {
-    // Mapping status enum DB ke warna
     const styles: Record<string, string> = {
       menunggu_assign: 'bg-gray-100 text-gray-600',
       ditugaskan: 'bg-blue-50 text-blue-600',
@@ -272,7 +311,6 @@ export default function DetailKelolaLaporan() {
                 <div className="p-6">
                   <p className="text-gray-700 mb-6 whitespace-pre-wrap">{laporan.deskripsi}</p>
                   
-                  {/* Foto & Maps */}
                   <div className="grid md:grid-cols-2 gap-4">
                     {laporan.laporan_foto && laporan.laporan_foto[0] ? (
                       <img src={laporan.laporan_foto[0]} alt="Foto Pelapor" className="rounded-xl w-full h-48 object-cover border" />
@@ -284,7 +322,7 @@ export default function DetailKelolaLaporan() {
                 </div>
               </div>
 
-              {/* LIST DINAS (The Core Feature) */}
+              {/* LIST DINAS */}
               <div>
                 <h2 className="text-xl font-bold mb-4 flex gap-2 items-center text-gray-800">
                   <Building2 className="text-[#3E1C96]"/> Status Pengerjaan Dinas
@@ -293,7 +331,6 @@ export default function DetailKelolaLaporan() {
                 <div className="space-y-4">
                   {laporan.laporan_dinas.map((ld) => (
                     <div key={ld.id_laporan_dinas} className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm relative overflow-hidden">
-                      {/* Status Strip */}
                       <div className={`absolute top-0 left-0 bottom-0 w-2 ${
                         ld.status_dinas === 'selesai' ? 'bg-green-500' : 
                         ld.status_dinas === 'menunggu_verifikasi_admin' ? 'bg-orange-500' : 'bg-gray-300'
@@ -308,7 +345,6 @@ export default function DetailKelolaLaporan() {
                             </span>
                           </div>
 
-                          {/* Action Buttons */}
                           {ld.status_dinas === 'menunggu_verifikasi_admin' && (
                             <div className="flex gap-2">
                               <button onClick={() => handleVerifikasiDinas(ld.id_laporan_dinas, true)} disabled={!!processingId} 
@@ -323,14 +359,12 @@ export default function DetailKelolaLaporan() {
                           )}
                         </div>
 
-                        {/* Catatan Dinas */}
                         {ld.catatan_dinas && (
                           <div className="bg-gray-50 p-3 rounded-lg text-sm text-gray-600 italic mb-4">
                              <span className="font-bold not-italic">Catatan:</span> {ld.catatan_dinas}
                           </div>
                         )}
 
-                        {/* BUKTI FOTO DARI TABEL PELAKSANAAN */}
                         {ld.pelaksanaan && ld.pelaksanaan.length > 0 ? (
                           <div className="mt-4">
                             <p className="text-xs font-bold text-gray-500 mb-2">Bukti Pengerjaan Lapangan:</p>
