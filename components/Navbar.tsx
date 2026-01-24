@@ -160,7 +160,7 @@ export default function Navbar() {
                 {user.role === 'dinas' && (
                   <>
                     <ModernNavLink href="/dinas/dashboard">Dashboard</ModernNavLink>
-                    <ModernNavLink href="/dinas/laporan">Laporan Masuk</ModernNavLink>
+                    {/* <ModernNavLink href="/dinas/laporan">Laporan Masuk</ModernNavLink> */}
                     <ModernNavLink href="/dinas/petugas">Petugas</ModernNavLink>
                     <ModernNavLink href="/dinas/statistik">Statistik</ModernNavLink>
                   </>

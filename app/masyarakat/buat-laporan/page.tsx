@@ -268,11 +268,13 @@ export default function BuatLaporanPage() {
     )
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError('')
     setSuccess('')
+
+    let createdLaporanId: string | null = null
 
     try {
       if (!masyarakatId) throw new Error('Sesi tidak valid. Silakan refresh halaman.')
@@ -280,6 +282,7 @@ export default function BuatLaporanPage() {
 
       addDebugLog('=== SUBMIT STARTED ===')
 
+      // --- 1. Upload Foto ---
       let fotoUrls: string[] = []
       if (foto) {
         addDebugLog('📸 Uploading photo...')
@@ -297,10 +300,12 @@ export default function BuatLaporanPage() {
           .getPublicUrl(fileName)
           
         fotoUrls.push(publicUrlData.publicUrl)
-        addDebugLog('✅ Photo uploaded')
       }
 
+      // --- 2. AI Classification ---
       addDebugLog('🤖 Running AI Classification...')
+      
+      // Gabungkan judul + deskripsi biar AI lebih pintar
       const aiResult = classifyLaporan({
         judul: judul.trim(),
         deskripsi: deskripsi.trim(),
@@ -309,11 +314,11 @@ export default function BuatLaporanPage() {
         urgensi: urgensi
       })
 
-      const isHighConfidence = aiResult.primary_dinas && aiResult.primary_dinas.confidence >= 70
-      addDebugLog(`📊 AI Confidence: ${aiResult.primary_dinas?.confidence || 0}% (${isHighConfidence ? 'HIGH' : 'LOW'})`)
+      // Cek Confidence
+      const isHighConfidence = aiResult.primary_dinas && aiResult.primary_dinas.confidence >= 60 // Saya turunkan dikit ke 60 biar lebih gampang masuk
+      const laporanStatus = isHighConfidence ? 'diproses' : 'menunggu' 
 
-      const laporanStatus = isHighConfidence ? 'diproses' : 'baru'
-
+      // --- 3. Insert Laporan Induk ---
       const parentLaporanPayload = {
         id_masyarakat: masyarakatId,
         judul: judul.trim(),
@@ -326,7 +331,7 @@ export default function BuatLaporanPage() {
         laporan_foto: fotoUrls,
         status: laporanStatus,
         confidence: aiResult.primary_dinas?.confidence || 0,
-        ai_reasoning: aiResult.reasoning.join('\n'),
+        ai_reasoning: aiResult.reasoning.join('\n'), // Gabungkan alasan jadi string
         sumber_keputusan: 'ai',
         ai_recommendation: aiResult.primary_dinas?.name
       }
@@ -337,49 +342,65 @@ export default function BuatLaporanPage() {
         .select()
         .single()
 
-      if (parentError) throw new Error(`Database Error: ${parentError.message}`)
+      if (parentError) throw new Error(`Database Error (Laporan): ${parentError.message}`)
+      
+      createdLaporanId = insertedParent.id_laporan
       addDebugLog(`✅ Laporan Induk Created: ID ${insertedParent.id_laporan}`)
+
+      // --- 4. Insert Laporan Dinas (Jembatan) ---
+      let assignedDinasNames: string[] = [] // Buat nampung nama dinas untuk pesan sukses
 
       if (isHighConfidence && aiResult.primary_dinas) {
         addDebugLog('⚡ Executing Auto-Assign to Dinas...')
         
         const dinasInserts = []
 
+        // A. Masukkan PRIMARY Dinas
         dinasInserts.push({
           id_laporan: insertedParent.id_laporan,
           id_dinas: aiResult.primary_dinas.id,
-          status_dinas: 'menunggu_assign',
-          catatan_dinas: `[AUTO AI] Primary Assignment. Confidence: ${aiResult.primary_dinas.confidence}%`
+          status_dinas: 'menunggu_assign', 
+          catatan_dinas: `[AUTO AI - UTAMA] Skor: ${aiResult.primary_dinas.confidence}%`
         })
+        assignedDinasNames.push(`🎯 ${aiResult.primary_dinas.name}`)
 
-        aiResult.related_dinas.forEach(d => {
-           dinasInserts.push({
-             id_laporan: insertedParent.id_laporan,
-             id_dinas: d.id,
-             status_dinas: 'menunggu_assign',
-             catatan_dinas: `[AUTO AI] Related/Support Agency. Confidence: ${d.confidence}%`
+        // B. Masukkan RELATED Dinas (Looping Array)
+        if (aiResult.related_dinas && aiResult.related_dinas.length > 0) {
+           aiResult.related_dinas.forEach(d => {
+             dinasInserts.push({
+               id_laporan: insertedParent.id_laporan,
+               id_dinas: d.id,
+               status_dinas: 'menunggu_assign',
+               catatan_dinas: `[AUTO AI - TERKAIT] Skor: ${d.confidence}%`
+             })
+             assignedDinasNames.push(`🔗 ${d.name}`)
            })
-        })
+        }
 
+        // C. Eksekusi Insert ke Supabase
         const { error: childError } = await supabase
           .from('laporan_dinas')
           .insert(dinasInserts)
 
         if (childError) {
-           addDebugLog(`⚠️ Failed to insert dinas records: ${childError.message}`)
+           console.error("❌ Gagal Insert Dinas:", childError)
+           // Opsional: Hapus laporan induk kalau gagal insert dinas
+           if (createdLaporanId) await supabase.from('laporan').delete().eq('id_laporan', createdLaporanId)
+           throw new Error(`Gagal meneruskan ke Dinas: ${childError.message}`)
         } else {
            addDebugLog(`✅ Assigned to ${dinasInserts.length} agencies.`)
         }
-      } else {
-        addDebugLog('⚠️ Low Confidence. Waiting for Admin Manual Assignment.')
-      }
+      } 
 
+      // --- 5. Pesan Sukses ---
+      // Update pesan ini supaya menampilkan SEMUA dinas
       const successMsg = isHighConfidence
-        ? `✅ Laporan Berhasil Dikirim!\n\n🤖 AI mendeteksi & meneruskan ke:\n🎯 ${aiResult.primary_dinas?.name}\n${aiResult.related_dinas.length > 0 ? `➕ ${aiResult.related_dinas.length} Dinas Terkait` : ''}`
-        : `✅ Laporan Berhasil Dikirim!\n\n⚠️ Laporan Anda menunggu verifikasi admin untuk penentuan dinas terkait.`
+        ? `✅ Laporan Berhasil & Diteruskan ke ${assignedDinasNames.length} Instansi!\n\n${assignedDinasNames.join('\n')}`
+        : `✅ Laporan Berhasil Disimpan!\n\n⚠️ Menunggu verifikasi admin (Confidence AI rendah).`
 
       setSuccess(successMsg)
       
+      // Reset Form
       setTimeout(() => {
         setJudul('')
         setDeskripsi('')
@@ -388,12 +409,11 @@ export default function BuatLaporanPage() {
         setLokasi(null)
         setAlamat('')
         setLokasiValid(null)
-      }, 4000)
+      }, 5000)
 
     } catch (err: any) {
       console.error(err)
       setError(err.message || 'Terjadi kesalahan sistem')
-      addDebugLog(`❌ ERROR: ${err.message}`)
     } finally {
       setLoading(false)
     }
