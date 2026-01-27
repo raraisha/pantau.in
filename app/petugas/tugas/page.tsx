@@ -12,10 +12,10 @@ import {
   Search, Zap
 } from 'lucide-react'
 
-// Tipe Data yang Disesuaikan
+// Tipe Data Disesuaikan agar UI tidak error
 type LaporanPetugas = {
-  id_pelaksanaan: string
-  status_pelaksanaan: 'belum_mulai' | 'sedang_dikerjakan' | 'selesai' | 'revisi'
+  id_pelaksanaan: string // Kita isi dengan ID Laporan Dinas
+  status_pelaksanaan: string 
   created_at: string
   judul: string
   deskripsi: string
@@ -46,94 +46,90 @@ export default function DashboardPetugas() {
     applyFilters()
   }, [searchQuery, filterStatus, tugas])
 
-const fetchData = async () => {
+  // --- 🔥 LOGIC FETCH DATA DIPERBAIKI DISINI 🔥 ---
+  const fetchData = async () => {
     try {
       setLoading(true)
       
-      // 1. Ambil User Login (Auth)
+      // 1. Ambil User Login
       const { data: { user } } = await supabase.auth.getUser()
-      
-      if (!user) {
-         alert("Kamu belum login!");
-         return;
-      }
+      if (!user) { return }
 
-      // 2. Cek Log: Siapa yang login?
-      console.log("🔑 Login sebagai Auth ID:", user.id);
-
-      // 3. Cari Data Petugas berdasarkan Auth ID (account_id)
-      // Kita cari: "Siapa petugas yang account_id nya = user.id?"
+      // 2. Ambil Data Petugas & ID Dinas-nya
       const { data: dataPetugas, error: errPetugas } = await supabase
         .from('petugas')
-        .select('id_petugas, nama')
-        .eq('account_id', user.id) // <--- PENTING: Pakai kolom baru tadi
-        .single()
+        .select('id_petugas, nama, id_dinas')
+        .eq('account_id', user.id)
+        .maybeSingle()
 
       if (errPetugas || !dataPetugas) {
-        console.error("❌ Akun ini tidak terdaftar sebagai petugas di tabel public.petugas");
-        console.warn("Pastikan email di tabel 'petugas' sama dengan email login, lalu jalankan script SQL sinkronisasi.");
-        return;
+        console.error("Petugas tidak valid:", errPetugas)
+        return
       }
 
-      console.log("✅ Terdeteksi sebagai Petugas:", dataPetugas.nama, "(ID:", dataPetugas.id_petugas, ")");
+      console.log("✅ Petugas:", dataPetugas.nama)
 
-      // 4. Gunakan ID Petugas ASLI untuk ambil tugas
-      const realPetugasId = dataPetugas.id_petugas;
-
+      // 3. Ambil Tugas dari Laporan Dinas (Induk)
+      // Kita ambil semua tugas yang masuk ke dinas petugas ini
       const { data, error } = await supabase
-        .from('pelaksanaan')
+        .from('laporan_dinas')
         .select(`
-          id_pelaksanaan,
-          status_pelaksanaan,
+          id_laporan_dinas,
+          status_dinas,
           created_at,
-          laporan_dinas:laporan_dinas!fk_pelaksanaan_laporan_dinas (
-            catatan_dinas,
-            laporan:laporan!fk_laporan_dinas_laporan (
-              judul,
-              deskripsi,
-              lokasi,
-              urgensi_laporan
-            )
+          catatan_dinas,
+          laporan (
+            judul,
+            deskripsi,
+            lokasi,
+            urgensi_laporan
           )
         `)
-        .eq('id_petugas', realPetugasId) // <--- Pakai ID Petugas dari tabel, bukan ID Auth
-        .order('created_at', { ascending: false });
+        .eq('id_dinas', dataPetugas.id_dinas)
+        .order('created_at', { ascending: false })
 
-      if (error) {
-        console.error("❌ Error Fetch Tugas:", error);
-        return;
-      }
+      if (error) throw error
 
-      // ... (Sisa kodenya sama, formatting data dsb)
       if (data) {
-         // ... proses mapping data ...
-         const formattedData = data.map((item: any) => ({
-            // ... copy mapping yg lama ...
-            id_pelaksanaan: item.id_pelaksanaan,
-            status_pelaksanaan: item.status_pelaksanaan,
-            created_at: item.created_at,
-            judul: item.laporan_dinas?.laporan?.judul || 'Judul Tidak Tersedia',
-            deskripsi: item.laporan_dinas?.laporan?.deskripsi || '-',
-            lokasi: item.laporan_dinas?.laporan?.lokasi || '-',
-            urgensi: item.laporan_dinas?.laporan?.urgensi_laporan || 'rendah',
-            catatan_dinas: item.laporan_dinas?.catatan_dinas || '-'
-         }))
+         // 4. Mapping Data agar sesaui dengan UI yang sudah ada
+         const formattedData: LaporanPetugas[] = data.map((item: any) => {
+            // Mapping Status DB ke Status UI
+            let statusUI = item.status_dinas;
+            if (['menunggu_assign', 'ditugaskan'].includes(item.status_dinas)) {
+                statusUI = 'belum_mulai';
+            }
+
+            return {
+                id_pelaksanaan: item.id_laporan_dinas, // ID Link diarahkan ke ID Laporan Dinas
+                status_pelaksanaan: statusUI,
+                created_at: item.created_at,
+                judul: item.laporan?.judul || 'Tanpa Judul',
+                deskripsi: item.laporan?.deskripsi || '-',
+                lokasi: item.laporan?.lokasi || '-',
+                urgensi: item.laporan?.urgensi_laporan || 'rendah',
+                catatan_dinas: item.catatan_dinas || '-'
+            }
+         })
+
          setTugas(formattedData)
-         // ... update statistik ...
+
+         // Update Statistik
          setStatistik({
             total: formattedData.length,
-            baru: formattedData.filter((t: any) => t.status_pelaksanaan === 'belum_mulai').length,
-            sedang_dikerjakan: formattedData.filter((t: any) => t.status_pelaksanaan === 'sedang_dikerjakan').length,
-            selesai: formattedData.filter((t: any) => ['selesai', 'menunggu verifikasi admin'].includes(t.status_pelaksanaan)).length,
+            baru: formattedData.filter(t => t.status_pelaksanaan === 'belum_mulai').length,
+            sedang_dikerjakan: formattedData.filter(t => t.status_pelaksanaan === 'sedang_dikerjakan').length,
+            selesai: formattedData.filter(t => ['selesai', 'menunggu_verifikasi_admin'].includes(t.status_pelaksanaan)).length,
          })
       }
 
     } catch (err: any) {
-      console.error("Error System:", err.message);
+      console.error("Error System:", err.message)
     } finally {
       setLoading(false)
     }
   } 
+  // --- 🔥 END LOGIC BARU 🔥 ---
+
   const applyFilters = () => {
     let filtered = [...tugas]
 
@@ -190,7 +186,9 @@ const fetchData = async () => {
         glow: 'shadow-lg shadow-red-500/50'
       }
     }
+    // Fallback jika status tidak dikenal
     const config = configs[status as keyof typeof configs] || configs.belum_mulai
+    
     return (
       <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold ${config.bg} ${config.text} ${config.glow} transition-all duration-300 hover:scale-105`}>
         {config.icon} {config.label}

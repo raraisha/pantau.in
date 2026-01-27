@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import { supabase } from '@/lib/supabase'
-import { classifyLaporan } from '@/lib/aiClassifier'
-import { Loader2, CheckCircle, AlertCircle, Upload, MapPin, FileText, XCircle, Send, ImageIcon, Tag, AlertTriangle, Search, Navigation } from 'lucide-react'
+import { classifyLaporan } from '@/lib/aiClassifier' 
+import { Loader2, CheckCircle, AlertCircle, Upload, MapPin, FileText, XCircle, Send, ImageIcon, Tag, AlertTriangle, Search, Navigation, X } from 'lucide-react'
 
 // --- Helper Functions ---
 
@@ -29,15 +29,9 @@ const getAddressFromCoordinates = async (lat: number, lng: number): Promise<stri
   try {
     const response = await fetch(
       `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
-      {
-        headers: {
-          'User-Agent': 'LaporanMasyarakat/1.0'
-        }
-      }
+      { headers: { 'User-Agent': 'LaporanMasyarakat/1.0' } }
     )
-    
     if (!response.ok) throw new Error('Gagal mendapatkan alamat')
-    
     const data = await response.json()
     return data.display_name || 'Alamat tidak ditemukan'
   } catch (error) {
@@ -54,18 +48,12 @@ const LocationSearch = ({ onSelectLocation }: { onSelectLocation: (lat: number, 
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return
-    
     setSearching(true)
     try {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery + ', Bandung')}&limit=5`,
-        {
-          headers: {
-            'User-Agent': 'LaporanMasyarakat/1.0'
-          }
-        }
+        { headers: { 'User-Agent': 'LaporanMasyarakat/1.0' } }
       )
-      
       const data = await response.json()
       setSearchResults(data)
     } catch (error) {
@@ -118,10 +106,10 @@ const LocationSearch = ({ onSelectLocation }: { onSelectLocation: (lat: number, 
   )
 }
 
-// Mock Map Component
+// Map Component
 const MapContainer = ({ setLokasi, currentLocation }: { setLokasi: (loc: { lat: number; lng: number }) => void, currentLocation: { lat: number; lng: number } | null }) => {
   const handleMapClick = () => {
-    setLokasi({ lat: -6.9175, lng: 107.6191 })
+    setLokasi({ lat: -6.9175, lng: 107.6191 }) 
   }
 
   return (
@@ -143,13 +131,13 @@ const MapContainer = ({ setLokasi, currentLocation }: { setLokasi: (loc: { lat: 
         <div className="text-center">
           <MapPin className="w-12 h-12 text-red-500 mx-auto mb-2" />
           <p className="text-sm text-gray-600 font-medium">Klik untuk pilih lokasi</p>
-          <p className="text-xs text-gray-500 mt-1">(Demo: akan set lokasi Bandung)</p>
         </div>
       )}
     </div>
   )
 }
 
+// --- MAIN COMPONENT ---
 export default function BuatLaporanPage() {
   const [judul, setJudul] = useState('')
   const [deskripsi, setDeskripsi] = useState('')
@@ -162,78 +150,56 @@ export default function BuatLaporanPage() {
   const [loadingAlamat, setLoadingAlamat] = useState(false)
   const [lokasiValid, setLokasiValid] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(false)
-  const [success, setSuccess] = useState('')
   const [error, setError] = useState('')
   const [masyarakatId, setMasyarakatId] = useState<string>('')
   const [gettingLocation, setGettingLocation] = useState(false)
 
-  const addDebugLog = (message: string) => {
-    console.log('🔍 DEBUG:', message)
-  }
+  // 🔥 State Toast Baru
+  const [toast, setToast] = useState<{ show: boolean, type: 'success' | 'warning', title: string, message: string } | null>(null)
 
   // Auth Check
   useEffect(() => {
     const checkAuth = async () => {
-      addDebugLog('Checking authentication...')
-      
       const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
       
       if (authError || !authUser) {
-        addDebugLog('No auth user found')
         setError('⚠️ Anda harus login terlebih dahulu')
-        setTimeout(() => {
-          window.location.href = '/login'
-        }, 2000)
+        setTimeout(() => { window.location.href = '/login' }, 2000)
         return
       }
 
-      const { data: masyarakatData, error: dbError } = await supabase
+      const { data: masyarakatData } = await supabase
         .from('masyarakat')
         .select('id_masyarakat')
         .eq('email', authUser.email)
         .single()
 
-      if (dbError || !masyarakatData) {
-         addDebugLog(`❌ Failed to fetch profile: ${dbError?.message}`)
-         setError('Profil masyarakat tidak ditemukan. Silakan login ulang.')
-         return
-      }
-
-      setMasyarakatId(masyarakatData.id_masyarakat)
-      addDebugLog(`✅ User ID set: ${masyarakatData.id_masyarakat}`)
+      if (masyarakatData) setMasyarakatId(masyarakatData.id_masyarakat)
     }
-
     checkAuth()
   }, [])
 
+  // Auto Dismiss Toast
+  useEffect(() => {
+    if (toast?.show) {
+        const timer = setTimeout(() => setToast(null), 6000) // Hilang dalam 6 detik
+        return () => clearTimeout(timer)
+    }
+  }, [toast])
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null
-    
     if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        setError('Ukuran file maksimal 5MB')
-        return
-      }
-      if (!file.type.startsWith('image/')) {
-        setError('File harus berupa gambar')
-        return
-      }
-
       setFoto(file)
       const reader = new FileReader()
       reader.onloadend = () => setFotoPreview(reader.result as string)
       reader.readAsDataURL(file)
-    } else {
-      setFoto(null)
-      setFotoPreview(null)
     }
   }
 
   const handleLokasiChange = async (newLokasi: { lat: number; lng: number }) => {
     setLokasi(newLokasi)
     setLoadingAlamat(true)
-    setAlamat('')
-    
     const isValid = isInsideBandung(newLokasi.lat, newLokasi.lng)
     setLokasiValid(isValid)
     
@@ -242,83 +208,69 @@ export default function BuatLaporanPage() {
       const address = await getAddressFromCoordinates(newLokasi.lat, newLokasi.lng)
       setAlamat(address)
     } else {
-      setError('⚠️ Lokasi luar Bandung. Silakan pilih lokasi di dalam Kota Bandung.')
+      setError('⚠️ Lokasi luar Bandung.')
     }
     setLoadingAlamat(false)
   }
 
   const handleGetCurrentLocation = () => {
     if (!navigator.geolocation) {
-      setError('Geolocation tidak didukung di browser Anda')
+      setError('Geolocation tidak didukung')
       return
     }
-
     setGettingLocation(true)
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        const { latitude, longitude } = position.coords
-        handleLokasiChange({ lat: latitude, lng: longitude })
+        handleLokasiChange({ lat: position.coords.latitude, lng: position.coords.longitude })
         setGettingLocation(false)
       },
-      (error) => {
-        console.error('Geolocation error:', error)
-        setError('Gagal mendapatkan lokasi. Pastikan izin lokasi diaktifkan.')
+      () => {
+        setError('Gagal mendapatkan lokasi.')
         setGettingLocation(false)
       }
     )
   }
 
-const handleSubmit = async (e: React.FormEvent) => {
+  // --- SUBMIT HANDLER ---
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError('')
-    setSuccess('')
-
-    let createdLaporanId: string | null = null
+    setToast(null) // Reset Toast
 
     try {
-      if (!masyarakatId) throw new Error('Sesi tidak valid. Silakan refresh halaman.')
+      if (!masyarakatId) throw new Error('Sesi tidak valid. Refresh halaman.')
       if (!lokasi || !lokasiValid) throw new Error('Lokasi harus dipilih dan valid.')
 
-      addDebugLog('=== SUBMIT STARTED ===')
-
-      // --- 1. Upload Foto ---
+      // 1. Upload Foto
       let fotoUrls: string[] = []
       if (foto) {
-        addDebugLog('📸 Uploading photo...')
         const fileExt = foto.name.split('.').pop()
         const fileName = `${masyarakatId}-${Date.now()}.${fileExt}`
-        
-        const { error: uploadError } = await supabase.storage
-          .from('laporan_foto')
-          .upload(fileName, foto)
-
+        const { error: uploadError } = await supabase.storage.from('laporan_foto').upload(fileName, foto)
         if (uploadError) throw new Error(`Gagal upload foto: ${uploadError.message}`)
-
-        const { data: publicUrlData } = supabase.storage
-          .from('laporan_foto')
-          .getPublicUrl(fileName)
-          
+        
+        const { data: publicUrlData } = supabase.storage.from('laporan_foto').getPublicUrl(fileName)
         fotoUrls.push(publicUrlData.publicUrl)
       }
 
-      // --- 2. AI Classification ---
-      addDebugLog('🤖 Running AI Classification...')
-      
-      // Gabungkan judul + deskripsi biar AI lebih pintar
-      const aiResult = classifyLaporan({
+      // 2. AI Classification
+      const aiResult = await classifyLaporan({
         judul: judul.trim(),
         deskripsi: deskripsi.trim(),
         kategori: kategori,
-        lokasi: alamat,
-        urgensi: urgensi
+        urgensi: urgensi,
+        lokasi: alamat 
       })
 
-      // Cek Confidence
-      const isHighConfidence = aiResult.primary_dinas && aiResult.primary_dinas.confidence >= 60 // Saya turunkan dikit ke 60 biar lebih gampang masuk
-      const laporanStatus = isHighConfidence ? 'diproses' : 'menunggu' 
+      // 3. Logic AI: Cek apakah ada hasil
+      const hasRecommendation = !!aiResult.primary_dinas;
+      const idSaran = hasRecommendation ? aiResult.all_dinas_ids : [];
+      const namaSaran = hasRecommendation 
+         ? [aiResult.primary_dinas?.name, ...(aiResult.related_dinas?.map(d => d.name) || [])].filter(Boolean)
+         : [];
 
-      // --- 3. Insert Laporan Induk ---
+      // 4. Insert Laporan
       const parentLaporanPayload = {
         id_masyarakat: masyarakatId,
         judul: judul.trim(),
@@ -329,76 +281,40 @@ const handleSubmit = async (e: React.FormEvent) => {
         latitude: lokasi.lat,
         longitude: lokasi.lng,
         laporan_foto: fotoUrls,
-        status: laporanStatus,
+        
+        status: 'menunggu_verifikasi', // Selalu menunggu verifikasi admin dulu
+        saran_ai: idSaran,             // Array kosong jika AI gagal
+        
         confidence: aiResult.primary_dinas?.confidence || 0,
-        ai_reasoning: aiResult.reasoning.join('\n'), // Gabungkan alasan jadi string
-        sumber_keputusan: 'ai',
-        ai_recommendation: aiResult.primary_dinas?.name
+        ai_reasoning: aiResult.reasoning.join('\n'),
+        sumber_keputusan: 'ai_suggest', 
+        ai_recommendation: aiResult.primary_dinas?.name || null
       }
 
-      const { data: insertedParent, error: parentError } = await supabase
+      const { error: parentError } = await supabase
         .from('laporan')
         .insert(parentLaporanPayload)
-        .select()
-        .single()
 
-      if (parentError) throw new Error(`Database Error (Laporan): ${parentError.message}`)
-      
-      createdLaporanId = insertedParent.id_laporan
-      addDebugLog(`✅ Laporan Induk Created: ID ${insertedParent.id_laporan}`)
+      if (parentError) throw new Error(`Database Error: ${parentError.message}`)
 
-      // --- 4. Insert Laporan Dinas (Jembatan) ---
-      let assignedDinasNames: string[] = [] // Buat nampung nama dinas untuk pesan sukses
-
-      if (isHighConfidence && aiResult.primary_dinas) {
-        addDebugLog('⚡ Executing Auto-Assign to Dinas...')
-        
-        const dinasInserts = []
-
-        // A. Masukkan PRIMARY Dinas
-        dinasInserts.push({
-          id_laporan: insertedParent.id_laporan,
-          id_dinas: aiResult.primary_dinas.id,
-          status_dinas: 'menunggu_assign', 
-          catatan_dinas: `[AUTO AI - UTAMA] Skor: ${aiResult.primary_dinas.confidence}%`
-        })
-        assignedDinasNames.push(`🎯 ${aiResult.primary_dinas.name}`)
-
-        // B. Masukkan RELATED Dinas (Looping Array)
-        if (aiResult.related_dinas && aiResult.related_dinas.length > 0) {
-           aiResult.related_dinas.forEach(d => {
-             dinasInserts.push({
-               id_laporan: insertedParent.id_laporan,
-               id_dinas: d.id,
-               status_dinas: 'menunggu_assign',
-               catatan_dinas: `[AUTO AI - TERKAIT] Skor: ${d.confidence}%`
-             })
-             assignedDinasNames.push(`🔗 ${d.name}`)
-           })
-        }
-
-        // C. Eksekusi Insert ke Supabase
-        const { error: childError } = await supabase
-          .from('laporan_dinas')
-          .insert(dinasInserts)
-
-        if (childError) {
-           console.error("❌ Gagal Insert Dinas:", childError)
-           // Opsional: Hapus laporan induk kalau gagal insert dinas
-           if (createdLaporanId) await supabase.from('laporan').delete().eq('id_laporan', createdLaporanId)
-           throw new Error(`Gagal meneruskan ke Dinas: ${childError.message}`)
-        } else {
-           addDebugLog(`✅ Assigned to ${dinasInserts.length} agencies.`)
-        }
-      } 
-
-      // --- 5. Pesan Sukses ---
-      // Update pesan ini supaya menampilkan SEMUA dinas
-      const successMsg = isHighConfidence
-        ? `✅ Laporan Berhasil & Diteruskan ke ${assignedDinasNames.length} Instansi!\n\n${assignedDinasNames.join('\n')}`
-        : `✅ Laporan Berhasil Disimpan!\n\n⚠️ Menunggu verifikasi admin (Confidence AI rendah).`
-
-      setSuccess(successMsg)
+      // 5. 🔥 SET TOAST BERDASARKAN HASIL AI 🔥
+      if (hasRecommendation) {
+          // CASE A: AI Berhasil
+          setToast({
+            show: true,
+            type: 'success',
+            title: 'Laporan Berhasil Dikirim! 🎉',
+            message: `Sistem AI menyarankan penerusan ke: ${namaSaran.join(', ')}. \nLaporan sedang menunggu verifikasi admin.`
+          })
+      } else {
+          // CASE B: AI Gagal / Confidence Rendah
+          setToast({
+            show: true,
+            type: 'warning',
+            title: 'Laporan Diterima (Butuh Verifikasi Manual) ⚠️',
+            message: `AI tidak menemukan dinas yang spesifik atau skor keyakinan terlalu rendah. \nLaporan akan ditinjau secara manual oleh Admin.`
+          })
+      }
       
       // Reset Form
       setTimeout(() => {
@@ -408,8 +324,7 @@ const handleSubmit = async (e: React.FormEvent) => {
         setFotoPreview(null)
         setLokasi(null)
         setAlamat('')
-        setLokasiValid(null)
-      }, 5000)
+      }, 1000)
 
     } catch (err: any) {
       console.error(err)
@@ -422,8 +337,34 @@ const handleSubmit = async (e: React.FormEvent) => {
   return (
     <>
       <Navbar />
-      <div className="min-h-screen bg-gradient-to-br from-[#FDF7EE] via-[#f8f4ff] to-[#FDF7EE] pt-20">
+      <div className="min-h-screen bg-gradient-to-br from-[#FDF7EE] via-[#f8f4ff] to-[#FDF7EE] pt-20 relative">
         
+        {/* 🔥 FLOATING TOAST NOTIFICATION 🔥 */}
+        {toast && toast.show && (
+            <div className={`fixed top-24 right-4 md:right-8 z-50 max-w-md w-full animate-in slide-in-from-right-10 fade-in duration-300`}>
+                <div className={`rounded-2xl border-l-4 shadow-2xl p-5 flex items-start gap-4 backdrop-blur-md bg-white/95 ${
+                    toast.type === 'success' 
+                    ? 'border-green-500 shadow-green-200/50' 
+                    : 'border-orange-500 shadow-orange-200/50'
+                }`}>
+                    <div className={`mt-1 p-2 rounded-full ${toast.type === 'success' ? 'bg-green-100 text-green-600' : 'bg-orange-100 text-orange-600'}`}>
+                        {toast.type === 'success' ? <CheckCircle className="w-6 h-6"/> : <AlertTriangle className="w-6 h-6"/>}
+                    </div>
+                    <div className="flex-1">
+                        <h4 className={`font-bold text-lg mb-1 ${toast.type === 'success' ? 'text-green-800' : 'text-orange-800'}`}>
+                            {toast.title}
+                        </h4>
+                        <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">
+                            {toast.message}
+                        </p>
+                    </div>
+                    <button onClick={() => setToast(null)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                        <X className="w-5 h-5"/>
+                    </button>
+                </div>
+            </div>
+        )}
+
         {/* Header */}
         <div className="bg-gradient-to-br from-[#3E1C96] via-[#5429CC] to-[#6B35E8] text-white">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center">
@@ -440,15 +381,7 @@ const handleSubmit = async (e: React.FormEvent) => {
         </div>
 
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-
-          {/* Feedback Messages */}
-          {success && (
-            <div className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-green-50 border-2 border-green-200 shadow-sm animate-pulse">
-              <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
-              <p className="text-sm text-green-800 font-semibold whitespace-pre-line">{success}</p>
-            </div>
-          )}
-
+          
           {error && (
             <div className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-red-50 border-2 border-red-200 shadow-sm">
               <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
@@ -457,7 +390,7 @@ const handleSubmit = async (e: React.FormEvent) => {
           )}
 
           {/* Form */}
-          <div onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+          <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
             <div className="divide-y divide-gray-100">
               
               {/* Judul */}
@@ -465,7 +398,7 @@ const handleSubmit = async (e: React.FormEvent) => {
                 <label className="flex items-center gap-2 text-sm font-bold text-gray-900 mb-3">
                   <FileText className="w-4 h-4 text-[#3E1C96]" /> Judul Laporan <span className="text-red-500">*</span>
                 </label>
-                <input type="text" value={judul} onChange={(e) => setJudul(e.target.value)} placeholder="Contoh: Jalan berlubang di depan sekolah" className="w-full px-4 py-3.5 border-2 rounded-xl focus:ring-2 focus:ring-[#3E1C96] focus:border-[#3E1C96] text-black text-sm" required />
+                <input type="text" value={judul} onChange={(e) => setJudul(e.target.value)} placeholder="Contoh: Jalan berlubang di depan sekolah" className="w-full px-4 py-3.5 border-2 rounded-xl focus:ring-2 focus:ring-[#3E1C96] text-black text-sm" required />
               </div>
 
               {/* Kategori & Urgensi */}
@@ -473,9 +406,7 @@ const handleSubmit = async (e: React.FormEvent) => {
                 <div>
                   <label className="flex items-center gap-2 text-sm font-bold text-gray-900 mb-3"><Tag className="w-4 h-4 text-[#3E1C96]" /> Kategori</label>
                   <select value={kategori} onChange={(e) => setKategori(e.target.value)} className="w-full px-4 py-3.5 border-2 rounded-xl bg-white text-black text-sm">
-                    {['Umum', 'Infrastruktur', 'Kebersihan', 'Keamanan', 'Lingkungan', 'Kesehatan', 'Transportasi', 'Sosial', 'Pendidikan', 'Lainnya'].map(k => (
-                       <option key={k} value={k}>{k}</option>
-                    ))}
+                    {['Umum', 'Infrastruktur', 'Kebersihan', 'Keamanan', 'Lingkungan', 'Kesehatan', 'Transportasi', 'Sosial', 'Pendidikan', 'Lainnya'].map(k => <option key={k} value={k}>{k}</option>)}
                   </select>
                 </div>
                 <div>
@@ -521,26 +452,14 @@ const handleSubmit = async (e: React.FormEvent) => {
               <div className="p-6">
                 <label className="flex items-center gap-2 text-sm font-bold text-gray-900 mb-4"><MapPin className="w-4 h-4 text-[#3E1C96]" /> Pilih Lokasi <span className="text-red-500">*</span></label>
                 
-                {/* Location Options */}
                 <div className="mb-4 flex flex-col sm:flex-row gap-3">
-                  <button
-                    type="button"
-                    onClick={handleGetCurrentLocation}
-                    disabled={gettingLocation}
-                    className="flex-1 px-4 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors flex items-center justify-center gap-2 font-semibold"
-                  >
-                    {gettingLocation ? (
-                      <><Loader2 className="w-4 h-4 animate-spin" /> Mendapatkan Lokasi...</>
-                    ) : (
-                      <><Navigation className="w-4 h-4" /> Gunakan Lokasi Saat Ini</>
-                    )}
+                  <button type="button" onClick={handleGetCurrentLocation} disabled={gettingLocation} className="flex-1 px-4 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors flex items-center justify-center gap-2 font-semibold">
+                    {gettingLocation ? <><Loader2 className="w-4 h-4 animate-spin" /> Mencari...</> : <><Navigation className="w-4 h-4" /> Gunakan Lokasi Saat Ini</>}
                   </button>
                 </div>
 
-                {/* Search Location */}
                 <LocationSearch onSelectLocation={(lat, lng) => handleLokasiChange({ lat, lng })} />
 
-                {/* Map */}
                 <div className="rounded-xl overflow-hidden border-2 h-80 my-4 shadow-lg">
                    <MapContainer setLokasi={handleLokasiChange} currentLocation={lokasi} />
                 </div>
@@ -565,17 +484,15 @@ const handleSubmit = async (e: React.FormEvent) => {
               <div className="p-6 bg-gray-50">
                 <button 
                   type="submit"
-                  onClick={handleSubmit}
                   disabled={loading || !lokasiValid || !masyarakatId} 
                   className="w-full py-4 px-6 rounded-xl font-bold text-white bg-gradient-to-r from-[#3E1C96] to-[#5429CC] hover:shadow-xl hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 transition-all flex items-center justify-center gap-3"
                 >
-                  {loading ? <><Loader2 className="animate-spin" /> Mengirim...</> : <><Send className="w-5 h-5" /> Kirim Laporan</>}
+                  {loading ? <><Loader2 className="animate-spin" /> Memproses...</> : <><Send className="w-5 h-5" /> Kirim Laporan</>}
                 </button>
-                <p className="text-xs text-center text-gray-500 mt-4">🔒 Laporan diproses otomatis oleh sistem AI & diteruskan ke dinas terkait.</p>
               </div>
 
             </div>
-          </div>
+          </form>
         </div>
       </div>
       <Footer />
